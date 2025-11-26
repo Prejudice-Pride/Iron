@@ -42,7 +42,8 @@ def load_model(device):
     print(f"Loading weights from {CKPT_PATH}")
     # 使用官方封装，自动处理权重加载和 resize
     # offline=False 启用 Online 模型 (Sliding Window)，支持长视频
-    model = CoTrackerPredictor(checkpoint=CKPT_PATH, offline=False).to(device)
+    # window_len=16 是 scaled_online.pth 权重的训练参数
+    model = CoTrackerPredictor(checkpoint=CKPT_PATH, offline=False, window_len=16).to(device)
     return model
 
 
@@ -402,7 +403,16 @@ def run_model_custom(model_predictor, video, queries):
 
 
 def main():
-    inp = sys.argv[1] if len(sys.argv) > 1 else os.path.join(INPUT_DIR, DEFAULT_VIDEO)
+    if len(sys.argv) > 1:
+        inp = sys.argv[1]
+        # If file doesn't exist, try looking in INPUT_DIR
+        if not os.path.exists(inp):
+            candidate = os.path.join(INPUT_DIR, inp)
+            if os.path.exists(candidate):
+                inp = candidate
+    else:
+        inp = os.path.join(INPUT_DIR, DEFAULT_VIDEO)
+
     out = sys.argv[2] if len(sys.argv) > 2 else OUTPUT_DIR
     os.makedirs(out, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -418,7 +428,16 @@ def main():
     # Limit frames to avoid OOM with offline model
     # prepare tensor (1, T, C, H, W)
     # frames is RGB (from imageio), CoTracker expects RGB float [0, 255]
-    video_tensor = torch.tensor(frames).permute(0,3,1,2)[None].float().to(device)
+    # 优化：不要一次性把所有帧转为 Tensor 并放到 GPU 上，这会占用大量显存
+    # CoTrackerPredictor 内部会处理，但如果我们直接传 Tensor，它就全在显存里了
+    # 我们可以先传 numpy array 或者 cpu tensor，让模型内部按需处理（虽然 Predictor 接口可能还是会转）
+    # 最直接的优化：手动 resize 视频到模型输入尺寸，减少显存占用
+    # CoTracker 默认输入尺寸通常是 (384, 512) 或类似，原始 1080p 太大了
+    
+    # 策略：为了不损失精度，我们保持原始分辨率，但采用分段处理（Chunking）
+    # 这样可以避免一次性将整个高分辨率视频加载到显存中导致的 OOM
+    frames_input = frames
+
 
     # ROI handling: check for existing ROI file; if missing, ask user to draw exclusion rectangles
     base = os.path.splitext(os.path.basename(inp))[0]
@@ -474,40 +493,83 @@ def main():
         print("No ROI exclusions provided; selecting corners over full frame.")
 
     # Auto mode: always detect Shi-Tomasi corners (do not prefer saved corner file)
-    init_pts = detect_corners_firstframe(frames, max_corners=10, quality=0.005, min_dist=6, block=7, valid_mask=allowed_mask)
+    # 分段处理后显存压力减小，恢复较大的 max_corners 以确保能检测到点
+    init_pts = detect_corners_firstframe(frames, max_corners=200, quality=0.001, min_dist=6, block=7, valid_mask=allowed_mask)
     if init_pts is None:
         init_pts = np.empty((0,2), dtype=np.float32)
     print(f"Detected Shi-Tomasi initial points (after ROI exclusion): {init_pts.shape[0]}")
-    # draw preview of detected corners and save to per-video out_dir
-    try:
-        preview = frames[0].copy()
-        for x, y in init_pts:
-            cv2.circle(preview, (int(round(x)), int(round(y))), 4, (0,255,0), -1)
-        preview_path = os.path.join(out_dir, base + "_corners_preview.png")
-        cv2.imwrite(preview_path, preview)
-        print(f"Saved corner preview: {preview_path}")
-    except Exception:
-        pass
 
-    with torch.no_grad():
-        torch.cuda.empty_cache() # Clear memory before inference
-        if init_pts.shape[0] > 0:
-            # build queries tensor shape (B=1, N, 3) with (t, x, y)
-            q = np.zeros((1, init_pts.shape[0], 3), dtype=np.float32)
-            q[0, :, 0] = 0  # start frame index
-            q[0, :, 1:] = init_pts[:, :2]
-            queries = torch.from_numpy(q).to(device)
-            # CoTrackerPredictor handles resize and coordinate transform
-            # Use custom runner to avoid OOM
-            pred_tracks, pred_vis = run_model_custom(model, video_tensor, queries)
+    # Chunking logic to avoid OOM
+    CHUNK_LEN = 100  # Process 100 frames at a time
+    all_tracks_list = []
+
+    # Prepare initial queries
+    if init_pts.shape[0] > 0:
+        q = np.zeros((1, init_pts.shape[0], 3), dtype=np.float32)
+        q[0, :, 0] = 0
+        q[0, :, 1:] = init_pts[:, :2]
+        current_queries = torch.from_numpy(q).to(device)
+        use_grid = False
+    else:
+        current_queries = None
+        use_grid = True
+        print("No corner points provided, using grid-based queries for first chunk")
+
+    print(f"Processing video in chunks of {CHUNK_LEN} frames...")
+
+    start_frame = 0
+    while start_frame < T - 1:
+        end_frame = min(start_frame + CHUNK_LEN, T)
+        chunk_frames = frames_input[start_frame:end_frame]
+        # Create tensor for just this chunk
+        chunk_tensor = torch.tensor(chunk_frames).permute(0, 3, 1, 2)[None].float().to(device)
+
+        print(f"  Chunk: {start_frame} to {end_frame} (len={len(chunk_frames)})")
+
+        with torch.no_grad():
+            torch.cuda.empty_cache()
+            if start_frame == 0 and use_grid:
+                # First chunk with grid
+                pred_tracks_chunk, pred_vis_chunk = model(chunk_tensor, grid_size=5)
+                use_grid = False  # Switch to queries for next chunks
+            else:
+                # Subsequent chunks or first chunk with queries
+                # Ensure queries time is 0 relative to chunk
+                if current_queries is not None:
+                    current_queries[:, :, 0] = 0
+                pred_tracks_chunk, pred_vis_chunk = model(chunk_tensor, queries=current_queries)
+
+        # Store results
+        # pred_tracks_chunk: (1, len, N, 2)
+        chunk_tracks_np = pred_tracks_chunk.cpu().numpy()
+
+        if start_frame == 0:
+            all_tracks_list.append(chunk_tracks_np)
         else:
-            print("No corner points provided, falling back to grid-based queries")
-            pred_tracks, pred_vis = model(video_tensor, grid_size=GRID_SIZE)
+            # Skip the first frame as it overlaps with previous chunk's last frame
+            all_tracks_list.append(chunk_tracks_np[:, 1:])
 
-    pred_tracks_np = pred_tracks.cpu().numpy()
+        # Prepare for next chunk
+        # Get last positions from this chunk to use as queries for next
+        last_pos = pred_tracks_chunk[0, -1, :, :]  # (N, 2)
+
+        # Create new queries
+        new_q = torch.zeros((1, last_pos.shape[0], 3), device=device)
+        new_q[0, :, 0] = 0
+        new_q[0, :, 1:] = last_pos
+        current_queries = new_q
+
+        start_frame = end_frame - 1  # Overlap by 1 frame
+
+    # Concatenate all tracks
+    # all_tracks_list elements are (1, T_part, N, 2)
+    pred_tracks_np = np.concatenate(all_tracks_list, axis=1)
+
     print("Model output shape:", pred_tracks_np.shape)
 
-    raw_tracks = to_pixel_tracks(pred_tracks_np, (H, W))
+    raw_tracks = to_pixel_tracks(pred_tracks_np, (frames_input.shape[1], frames_input.shape[2]))
+
+
     print("Raw cotracker tracks shape (N_cot,T,2):", raw_tracks.shape)
     # If we had user-specified init_pts, map & align cotracker tracks to those points
     if 'init_pts' in locals() and init_pts is not None and init_pts.shape[0] > 0:
