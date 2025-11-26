@@ -1,2 +1,8 @@
 *.mp4
 *.pyc
+corner_points/
+input_videos/
+output/
+output_videos/
+rois/
+.vscode/

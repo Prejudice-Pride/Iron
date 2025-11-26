@@ -18,63 +18,39 @@ import imageio.v3 as iio
 import cv2
 import torch
 import importlib.util
+import torch.nn.functional as F
 
+# 添加 co-tracker 路径到 sys.path
+REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker"))
+if REPO_DIR not in sys.path:
+    sys.path.insert(0, REPO_DIR)
+
+from cotracker.predictor import CoTrackerPredictor
 
 INPUT_DIR = "input_videos"
 DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 ROI_DIR = "rois"
 CORNER_DIR = "corner_points"
-REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker"))
 GRID_SIZE = 10
-MODEL_TYPE = "cotracker3_offline"
-CKPT_REL = os.path.join("checkpoints", "scaled_offline.pth")
+CKPT_PATH = os.path.join(REPO_DIR, "checkpoints", "scaled_online.pth")
 
 
 def load_model(device):
-    hubconf_path = os.path.join(REPO_DIR, "hubconf.py")
-    spec = importlib.util.spec_from_file_location("hubconf", hubconf_path)
-    hubconf = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(hubconf)
-    builder = getattr(hubconf, MODEL_TYPE)
-    model = builder(pretrained=False).to(device)
-    ckpt_path = os.path.join(REPO_DIR, CKPT_REL)
-    if not os.path.isfile(ckpt_path):
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
-    print(f"Loading weights from {ckpt_path}")
-    state = torch.load(ckpt_path, map_location=device)
-    if isinstance(state, dict):
-        if "model" in state:
-            state_dict = state["model"]
-        elif "state_dict" in state:
-            state_dict = state["state_dict"]
-        else:
-            state_dict = state
-    else:
-        state_dict = state
-    # strip module.
-    new_state = {}
-    for k, v in state_dict.items():
-        nk = k[len("module.") :] if k.startswith("module.") else k
-        new_state[nk] = v
-    model.load_state_dict(new_state, strict=False)
-    model.eval()
+    if not os.path.exists(CKPT_PATH):
+        raise FileNotFoundError(f"Checkpoint not found: {CKPT_PATH}")
+    print(f"Loading weights from {CKPT_PATH}")
+    # 使用官方封装，自动处理权重加载和 resize
+    # offline=False 启用 Online 模型 (Sliding Window)，支持长视频
+    model = CoTrackerPredictor(checkpoint=CKPT_PATH, offline=False).to(device)
     return model
 
 
-def read_frames(path, target_res=None, mb=16, pad_value=120):
+def read_frames(path):
+    # 移除手动 resize 和 padding，直接读取原始帧
     frames = iio.imread(path, plugin="FFMPEG")
+    # imageio 读取的是 RGB
     frames = np.array(frames)
-    if target_res is not None:
-        frames = np.array([cv2.resize(f, target_res) for f in frames])
-    H, W = frames.shape[1], frames.shape[2]
-    pad_h = ((H + mb - 1) // mb) * mb
-    pad_w = ((W + mb - 1) // mb) * mb
-    if pad_h != H or pad_w != W:
-        pad_bottom = pad_h - H
-        pad_right = pad_w - W
-        frames = np.array([cv2.copyMakeBorder(f, 0, pad_bottom, 0, pad_right, cv2.BORDER_CONSTANT, value=pad_value) for f in frames])
-        print(f"Padded frames from ({W},{H}) to ({pad_w},{pad_h})")
     # fps
     cap = cv2.VideoCapture(path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
@@ -83,7 +59,8 @@ def read_frames(path, target_res=None, mb=16, pad_value=120):
 
 
 def to_pixel_tracks(pred_tracks_np, frame_shape):
-    # pred_tracks_np may be (1,T,N,2) or (T,N,2) or (N,T,2)
+    # CoTrackerPredictor returns tracks in pixel coordinates (if input is original resolution)
+    # So we just need to handle shape
     arr = pred_tracks_np
     if arr.ndim == 4 and arr.shape[0] == 1:
         arr = arr[0]
@@ -99,16 +76,14 @@ def to_pixel_tracks(pred_tracks_np, frame_shape):
             tracks = np.transpose(arr, (1,0,2))
     else:
         raise RuntimeError("Unexpected pred_tracks shape: %s" % (arr.shape,))
-    # convert normalized to pixels
-    H, W = frame_shape
-    if np.nanmax(tracks) <= 1.01:
-        tracks[..., 0] = tracks[..., 0] * W
-        tracks[..., 1] = tracks[..., 1] * H
+    
+    # No normalization needed as CoTrackerPredictor handles it
     return tracks
 
 
 def detect_corners_firstframe(frames, max_corners=200, quality=0.01, min_dist=7, block=7, valid_mask=None):
-    gray0 = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
+    # frames is RGB, convert to GRAY
+    gray0 = cv2.cvtColor(frames[0], cv2.COLOR_RGB2GRAY)
     p0 = cv2.goodFeaturesToTrack(gray0, maxCorners=max_corners, qualityLevel=quality, minDistance=min_dist, blockSize=block)
     if p0 is None:
         return np.empty((0,2), dtype=np.float32)
@@ -153,7 +128,8 @@ def save_rois(path, rois):
 def select_rois_interactive(img):
     """Let user draw multiple rectangular ROIs to exclude. Returns list of [x1,y1,x2,y2]."""
     win = "Select exclusion ROIs - drag to draw, press r to remove last, q/Enter to finish"
-    clone = img.copy()
+    # img is RGB, convert to BGR for OpenCV
+    clone = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     rois = []
     current = None
 
@@ -163,7 +139,7 @@ def select_rois_interactive(img):
             current = (x, y, x, y)
         elif event == cv2.EVENT_MOUSEMOVE and current is not None:
             sx, sy, _, _ = current
-            clone = img.copy()
+            clone = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             cv2.rectangle(clone, (sx, sy), (x, y), (0, 0, 255), 2)
             for r in rois:
                 cv2.rectangle(clone, (r[0], r[1]), (r[2], r[3]), (0, 0, 255), 2)
@@ -174,7 +150,7 @@ def select_rois_interactive(img):
             x2, y2 = max(sx, x), max(sy, y)
             rois.append([int(x1), int(y1), int(x2), int(y2)])
             current = None
-            clone = img.copy()
+            clone = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             for r in rois:
                 cv2.rectangle(clone, (r[0], r[1]), (r[2], r[3]), (0, 0, 255), 2)
             cv2.imshow(win, clone)
@@ -188,7 +164,7 @@ def select_rois_interactive(img):
         if key == ord('r'):
             if len(rois) > 0:
                 rois.pop()
-                clone = img.copy()
+                clone = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
                 for r in rois:
                     cv2.rectangle(clone, (r[0], r[1]), (r[2], r[3]), (0, 0, 255), 2)
                 cv2.imshow(win, clone)
@@ -231,14 +207,15 @@ def save_corner_points(path, pts):
 def select_points_interactive(img):
     """Let user click points on image. Left-click add, 'r' remove last, Enter/q finish. Returns [[x,y],...]."""
     win = "Select corner points - left click to add, r remove last, Enter/q finish"
-    clone = img.copy()
+    # img is RGB, convert to BGR for OpenCV
+    clone = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     pts = []
 
     def on_mouse(event, x, y, flags, param):
         nonlocal clone
         if event == cv2.EVENT_LBUTTONDOWN:
             pts.append([int(x), int(y)])
-            clone = img.copy()
+            clone = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             for p in pts:
                 cv2.circle(clone, (int(p[0]), int(p[1])), 4, (0, 255, 0), -1)
             cv2.imshow(win, clone)
@@ -252,7 +229,7 @@ def select_points_interactive(img):
         if key == ord('r'):
             if len(pts) > 0:
                 pts.pop()
-                clone = img.copy()
+                clone = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
                 for p in pts:
                     cv2.circle(clone, (int(p[0]), int(p[1])), 4, (0, 255, 0), -1)
                 cv2.imshow(win, clone)
@@ -268,7 +245,8 @@ def visualize_tracks(frames, tracks, out_path, fps):
     colors = [tuple(int(c) for c in (rng.randint(50,255), rng.randint(50,255), rng.randint(50,255))) for _ in range(N)]
     vis = []
     for t in range(T):
-        img = frames[t].copy()
+        # frames is RGB, convert to BGR for OpenCV drawing
+        img = cv2.cvtColor(frames[t], cv2.COLOR_RGB2BGR)
         for i in range(N):
             pts = tracks[i]
             valid = ~np.isnan(pts[:t+1,0])
@@ -279,7 +257,8 @@ def visualize_tracks(frames, tracks, out_path, fps):
             if not np.isnan(pts[t,0]):
                 x,y = int(pts[t,0]), int(pts[t,1])
                 cv2.circle(img, (x,y), 3, colors[i], -1)
-        vis.append(img)
+        # Convert back to RGB for imageio saving
+        vis.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     iio.imwrite(out_path, np.array(vis), plugin="FFMPEG", fps=fps)
     return out_path
 
@@ -384,12 +363,51 @@ def map_and_align_tracks(cot_tracks, init_pts, frame_shape, thresh=50.0):
     return aligned, stats
 
 
+def run_model_custom(model_predictor, video, queries):
+    # Custom forward pass to handle memory issues by reducing fmaps_chunk_size
+    B, T, C, H, W = video.shape
+    interp_shape = model_predictor.interp_shape
+    
+    # 1. Resize video
+    video = video.reshape(B * T, C, H, W)
+    video = F.interpolate(
+        video, tuple(interp_shape), mode="bilinear", align_corners=True
+    )
+    video = video.reshape(B, T, 3, interp_shape[0], interp_shape[1])
+    
+    # 2. Resize queries
+    queries = queries.clone()
+    queries[:, :, 1:] *= queries.new_tensor(
+        [
+            (interp_shape[1] - 1) / (W - 1),
+            (interp_shape[0] - 1) / (H - 1),
+        ]
+    )
+    
+    # 3. Forward with chunking
+    # Access the underlying CoTrackerThreeOffline model
+    inner_model = model_predictor.model
+    
+    # Reduce fmaps_chunk_size to save memory (default is 200)
+    # If T is large, this helps avoid OOM during feature extraction
+    tracks, visibilities, *_ = inner_model(
+        video=video, queries=queries, iters=6, fmaps_chunk_size=50
+    )
+    
+    # 4. Restore tracks
+    tracks *= tracks.new_tensor(
+        [(W - 1) / (interp_shape[1] - 1), (H - 1) / (interp_shape[0] - 1)]
+    )
+    
+    return tracks, visibilities
+
+
 def main():
     inp = sys.argv[1] if len(sys.argv) > 1 else os.path.join(INPUT_DIR, DEFAULT_VIDEO)
     out = sys.argv[2] if len(sys.argv) > 2 else OUTPUT_DIR
     os.makedirs(out, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print("Loading model:", MODEL_TYPE, "on", device)
+    print("Loading model on", device)
     model = load_model(device)
 
     print("Reading frames from", inp)
@@ -398,7 +416,9 @@ def main():
     H, W = frames.shape[1], frames.shape[2]
     print(f"Frames: T={T}, HxW={W}x{H}, fps={fps}")
 
+    # Limit frames to avoid OOM with offline model
     # prepare tensor (1, T, C, H, W)
+    # frames is RGB (from imageio), CoTracker expects RGB float [0, 255]
     video_tensor = torch.tensor(frames).permute(0,3,1,2)[None].float().to(device)
 
     # ROI handling: check for existing ROI file; if missing, ask user to draw exclusion rectangles
@@ -489,13 +509,16 @@ def main():
     print(f"Final corner points to track (after ROI exclusion): {init_pts.shape[0]}")
 
     with torch.no_grad():
+        torch.cuda.empty_cache() # Clear memory before inference
         if init_pts.shape[0] > 0:
             # build queries tensor shape (B=1, N, 3) with (t, x, y)
             q = np.zeros((1, init_pts.shape[0], 3), dtype=np.float32)
             q[0, :, 0] = 0  # start frame index
             q[0, :, 1:] = init_pts[:, :2]
             queries = torch.from_numpy(q).to(device)
-            pred_tracks, pred_vis = model(video_tensor, queries=queries)
+            # CoTrackerPredictor handles resize and coordinate transform
+            # Use custom runner to avoid OOM
+            pred_tracks, pred_vis = run_model_custom(model, video_tensor, queries)
         else:
             print("No corner points provided, falling back to grid-based queries")
             pred_tracks, pred_vis = model(video_tensor, grid_size=GRID_SIZE)
