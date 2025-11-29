@@ -33,7 +33,7 @@ OUTPUT_DIR = "output"
 ROI_DIR = "rois"
 CORNER_DIR = "corner_points"
 GRID_SIZE = 10
-CKPT_PATH = os.path.join(REPO_DIR, "checkpoints", "scaled_online.pth")
+CKPT_PATH = os.path.join(REPO_DIR, "checkpoints", "scaled_offline.pth")
 
 
 def load_model(device):
@@ -41,9 +41,9 @@ def load_model(device):
         raise FileNotFoundError(f"Checkpoint not found: {CKPT_PATH}")
     print(f"Loading weights from {CKPT_PATH}")
     # 使用官方封装，自动处理权重加载和 resize
-    # offline=False 启用 Online 模型 (Sliding Window)，支持长视频
-    # window_len=16 是 scaled_online.pth 权重的训练参数
-    model = CoTrackerPredictor(checkpoint=CKPT_PATH, offline=False, window_len=16).to(device)
+    # offline=True 启用 Offline 模型 (Global Attention)，精度更高但显存占用大
+    # 配合 Chunking 使用效果最佳
+    model = CoTrackerPredictor(checkpoint=CKPT_PATH, offline=True).to(device)
     return model
 
 
@@ -259,7 +259,8 @@ def visualize_tracks(frames, tracks, out_path, fps):
                 cv2.circle(img, (x,y), 3, colors[i], -1)
         # Convert back to RGB for imageio saving
         vis.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    iio.imwrite(out_path, np.array(vis), plugin="FFMPEG", fps=fps)
+    # macro_block_size=1 prevents resizing/padding warning for odd resolutions (like 1080p not div by 16)
+    iio.imwrite(out_path, np.array(vis), plugin="FFMPEG", fps=fps, macro_block_size=1)
     return out_path
 
 
@@ -501,6 +502,7 @@ def main():
 
     # Chunking logic to avoid OOM
     CHUNK_LEN = 100  # Process 100 frames at a time
+    OVERLAP = 30     # Overlap frames for smoothing
     all_tracks_list = []
 
     # Prepare initial queries
@@ -515,9 +517,13 @@ def main():
         use_grid = True
         print("No corner points provided, using grid-based queries for first chunk")
 
-    print(f"Processing video in chunks of {CHUNK_LEN} frames...")
+    print(f"Processing video in chunks of {CHUNK_LEN} frames with {OVERLAP} frames overlap...")
 
     start_frame = 0
+    # To store the final stitched tracks. We don't know N yet if using grid.
+    # We will collect chunks and stitch them carefully.
+    stitched_tracks = None 
+
     while start_frame < T - 1:
         end_frame = min(start_frame + CHUNK_LEN, T)
         chunk_frames = frames_input[start_frame:end_frame]
@@ -539,31 +545,128 @@ def main():
                     current_queries[:, :, 0] = 0
                 pred_tracks_chunk, pred_vis_chunk = model(chunk_tensor, queries=current_queries)
 
-        # Store results
         # pred_tracks_chunk: (1, len, N, 2)
-        chunk_tracks_np = pred_tracks_chunk.cpu().numpy()
-
-        if start_frame == 0:
-            all_tracks_list.append(chunk_tracks_np)
+        chunk_tracks_np = pred_tracks_chunk.cpu().numpy() # (1, T_chunk, N, 2)
+        
+        if stitched_tracks is None:
+            # First chunk, just initialize
+            stitched_tracks = chunk_tracks_np
         else:
-            # Skip the first frame as it overlaps with previous chunk's last frame
-            all_tracks_list.append(chunk_tracks_np[:, 1:])
+            # Stitching with overlap blending
+            # stitched_tracks shape: (1, T_current, N, 2)
+            # chunk_tracks_np shape: (1, T_new, N, 2)
+            
+            # The overlap region in stitched_tracks is the last OVERLAP frames
+            # The overlap region in chunk_tracks_np is the first OVERLAP frames
+            
+            # Overlap length might be smaller if we are at the very end and chunk is small, 
+            # but logic below assumes standard overlap unless end of video.
+            # Actually, start_frame was incremented by (CHUNK_LEN - OVERLAP).
+            # So the overlap is exactly OVERLAP frames (or less if chunk is tiny).
+            
+            prev_len = stitched_tracks.shape[1]
+            new_len = chunk_tracks_np.shape[1]
+            
+            # Calculate how many frames overlap
+            # The previous loop advanced start_frame by (CHUNK_LEN - OVERLAP)
+            # So the new chunk starts at 'start_frame'.
+            # The old stitched_tracks ends at 'prev_end_frame'.
+            # We need to be careful. Let's track absolute frame indices.
+            
+            # Actually, simpler approach:
+            # We append the non-overlapping part of the previous chunk, 
+            # then blend the overlapping part, then append the rest of new chunk?
+            # No, we are building `stitched_tracks` incrementally.
+            
+            # Let's look at the indices:
+            # Previous chunk covered [prev_start, prev_end)
+            # Current chunk covers [start_frame, end_frame)
+            # Overlap is [start_frame, prev_end)
+            # Length of overlap = prev_end - start_frame = OVERLAP (usually)
+            
+            # We need to slice `stitched_tracks` to separate the non-overlapping part and the overlapping part.
+            # But `stitched_tracks` grows. 
+            # The overlap is at the END of `stitched_tracks`.
+            
+            n_overlap = stitched_tracks.shape[1] - (start_frame) # frames in stitched that overlap with new chunk start
+            # Wait, stitched_tracks starts at 0. Its length is `start_frame + overlap` from previous iteration?
+            # Let's trace:
+            # Iter 1: start=0, end=100. stitched len=100. Next start = 100 - 10 = 90.
+            # Iter 2: start=90, end=190. chunk len=100.
+            # Overlap is [90, 100). Length 10.
+            # stitched_tracks has indices 0..99. Overlap indices in stitched: 90..99.
+            # chunk_tracks has indices 0..99 (relative to 90). Overlap indices in chunk: 0..9.
+            
+            if n_overlap > 0:
+                # Blend region
+                # Weights for linear interpolation
+                # alpha goes from 0 to 1 over the overlap
+                alpha = np.linspace(0, 1, n_overlap + 2)[1:-1] # exclude 0 and 1 to avoid sharp edges? or include?
+                # Let's use standard linear blend: 
+                # frame i in overlap: (1-w)*old + w*new
+                # w should go from 0 (at start of overlap) to 1 (at end of overlap)
+                alpha = np.linspace(0, 1, n_overlap)
+                alpha = alpha.reshape(1, -1, 1, 1) # (1, T_overlap, 1, 1) broadcastable
+                
+                overlap_old = stitched_tracks[:, -n_overlap:, :, :]
+                overlap_new = chunk_tracks_np[:, :n_overlap, :, :]
+                
+                # Handle NaNs: if one is NaN, take the other. If both, NaN.
+                # But for simplicity, let's assume valid tracks or just do math (NaN propagates)
+                # Better: use nanmean-like logic or just simple weighted sum if valid.
+                # Since we want to smooth jumps, we assume both are valid-ish.
+                
+                blended = (1 - alpha) * overlap_old + alpha * overlap_new
+                
+                # Replace the end of stitched_tracks with blended
+                stitched_tracks[:, -n_overlap:, :, :] = blended
+                
+                # Append the rest of the new chunk
+                stitched_tracks = np.concatenate([stitched_tracks, chunk_tracks_np[:, n_overlap:, :, :]], axis=1)
+            else:
+                # No overlap (should not happen with logic below unless OVERLAP=0)
+                stitched_tracks = np.concatenate([stitched_tracks, chunk_tracks_np], axis=1)
+
+        if end_frame == T:
+            break
 
         # Prepare for next chunk
-        # Get last positions from this chunk to use as queries for next
-        last_pos = pred_tracks_chunk[0, -1, :, :]  # (N, 2)
+        # We need queries for the next chunk starting at `end_frame - OVERLAP`
+        # The current chunk ends at `end_frame`.
+        # The next chunk will start at `end_frame - OVERLAP`.
+        # So we need the positions at `end_frame - OVERLAP` from the CURRENT chunk.
+        # In the current chunk (which started at `start_frame`), this corresponds to index:
+        # (end_frame - OVERLAP) - start_frame = len(chunk) - OVERLAP
+        
+        next_start_frame = end_frame - OVERLAP
+        
+        # Fix infinite loop: ensure we always advance by at least 1 frame
+        if next_start_frame <= start_frame:
+             next_start_frame = start_frame + 1
+             
+        if next_start_frame >= T - 1:
+            break # Finished
+            
+        # Index in current chunk to take queries from
+        query_idx = (next_start_frame - start_frame)
+        
+        # Safety check
+        if query_idx < 0 or query_idx >= chunk_tracks_np.shape[1]:
+             # Should not happen normally
+             print("Warning: query index out of bounds, using last frame")
+             query_idx = -1
+             
+        last_pos = chunk_tracks_np[0, query_idx, :, :]  # (N, 2)
 
         # Create new queries
         new_q = torch.zeros((1, last_pos.shape[0], 3), device=device)
-        new_q[0, :, 0] = 0
-        new_q[0, :, 1:] = last_pos
+        new_q[0, :, 0] = 0 # Relative to the new chunk start
+        new_q[0, :, 1:] = torch.from_numpy(last_pos).to(device)
         current_queries = new_q
 
-        start_frame = end_frame - 1  # Overlap by 1 frame
+        start_frame = next_start_frame
 
-    # Concatenate all tracks
-    # all_tracks_list elements are (1, T_part, N, 2)
-    pred_tracks_np = np.concatenate(all_tracks_list, axis=1)
+    pred_tracks_np = stitched_tracks
 
     print("Model output shape:", pred_tracks_np.shape)
 
