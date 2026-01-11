@@ -6,4 +6,8 @@
 输出到 output/（包括可视化视频 tracked_<video>.mp4、轨迹 npz/csv，以及每点的相对 Y 波形 csv）；
 支持用 Shi‑Tomasi 在第一帧检测角点并把这些角点作为 cotracker 的 queries（也支持回退到网格）；
 为避免检测时间戳/叠加文字，可通过 rois/ 下的 JSON 指定排除矩形（交互式在有显示时弹窗选择或在 headless 下先保存第一帧供人工标注），
+<<<<<<< HEAD
 代码会过滤落在 ROI 内的角点再送入模型；工程结构包含 co-tracker 子模块、strategies 模块（之前拆分以便对比）。
+=======
+代码会过滤落在 ROI 内的角点再送入模型；工程结构包含 co-tracker 子模块、strategies 模块（之前拆分以便对比）。
+>>>>>>> 0c7fcda81c175a11fa8248a02d086ece7f110d98
