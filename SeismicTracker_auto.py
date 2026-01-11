@@ -19,6 +19,9 @@ import cv2
 import torch
 import importlib.util
 import torch.nn.functional as F
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 # 添加 co-tracker 路径到 sys.path
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker"))
@@ -240,26 +243,118 @@ def select_points_interactive(img):
 
 
 def visualize_tracks(frames, tracks, out_path, fps):
+    """
+    Generate a side-by-side visualization:
+    Left: Original video with tracked points.
+    Right: Real-time waveform plot of Y-displacements.
+    """
     N, T, _ = tracks.shape
+    H, W, _ = frames[0].shape
+    
+    # Prepare displacements (T, N)
+    displacements = np.full((T, N), np.nan)
+    for i in range(N):
+        valid = ~np.isnan(tracks[i, :, 1])
+        if valid.any():
+            y0 = tracks[i, np.where(valid)[0][0], 1]
+            displacements[valid, i] = tracks[i, valid, 1] - y0
+
+    # Setup plot
+    # Use a reasonable width for the plot, e.g., same as video width or fixed
+    dpi = 100
+    fig_w = W / dpi
+    fig_h = H / dpi
+    
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
+    
+    # Colors for plotting (0-1) and drawing (0-255)
     rng = np.random.RandomState(42)
-    colors = [tuple(int(c) for c in (rng.randint(50,255), rng.randint(50,255), rng.randint(50,255))) for _ in range(N)]
+    # Generate N colors
+    colors_mpl = [tuple(rng.rand(3)) for _ in range(N)]
+    # Convert to BGR 0-255 for OpenCV
+    colors_cv = [tuple(int(c*255) for c in reversed(col)) for col in colors_mpl]
+
     vis = []
+    times = np.arange(T) / fps
+    
+    # Pre-calculate global Y limits for the plot to keep scale fixed
+    valid_disp = displacements[~np.isnan(displacements)]
+    if valid_disp.size > 0:
+        ymin_global, ymax_global = valid_disp.min(), valid_disp.max()
+        margin = (ymax_global - ymin_global) * 0.1 if ymax_global != ymin_global else 1.0
+        ylim = (ymin_global - margin, ymax_global + margin)
+    else:
+        ylim = (-1, 1)
+
+    print(f"Rendering side-by-side video to {out_path}...")
+    
     for t in range(T):
-        # frames is RGB, convert to BGR for OpenCV drawing
-        img = cv2.cvtColor(frames[t], cv2.COLOR_RGB2BGR)
+        # --- 1. Left Image: Video Frame with Tracks ---
+        img = frames[t].copy() # RGB
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        
         for i in range(N):
             pts = tracks[i]
-            valid = ~np.isnan(pts[:t+1,0])
-            if np.count_nonzero(valid) >= 2:
-                vp = pts[:t+1][valid].astype(np.int32)
-                for k in range(len(vp)-1):
-                    cv2.line(img, tuple(vp[k]), tuple(vp[k+1]), colors[i], 2)
-            if not np.isnan(pts[t,0]):
-                x,y = int(pts[t,0]), int(pts[t,1])
-                cv2.circle(img, (x,y), 3, colors[i], -1)
-        # Convert back to RGB for imageio saving
-        vis.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-    # macro_block_size=1 prevents resizing/padding warning for odd resolutions (like 1080p not div by 16)
+            # Draw trail
+            valid_slice = ~np.isnan(pts[:t+1, 0])
+            if np.count_nonzero(valid_slice) >= 2:
+                vp = pts[:t+1][valid_slice].astype(np.int32)
+                cv2.polylines(img_bgr, [vp], False, colors_cv[i], 2)
+            
+            # Draw current point
+            if not np.isnan(pts[t, 0]):
+                cv2.circle(img_bgr, (int(pts[t,0]), int(pts[t,1])), 4, colors_cv[i], -1)
+        
+        img_left = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        
+        # --- 2. Right Image: Waveform Plot ---
+        ax.clear()
+        ax.set_xlim(0, T/fps)
+        ax.set_ylim(ylim)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Y Displacement (px)")
+        ax.set_title("Vertical Displacement")
+        ax.grid(True, alpha=0.3)
+        
+        # Plot tracks up to time t
+        for i in range(N):
+            d = displacements[:t+1, i]
+            tm = times[:t+1]
+            mask = ~np.isnan(d)
+            if mask.any():
+                ax.plot(tm[mask], d[mask], color=colors_mpl[i], linewidth=1.5)
+        
+        # Draw vertical line for current time
+        ax.axvline(x=t/fps, color='r', linestyle='--', alpha=0.5)
+
+        # Render to buffer
+        fig.canvas.draw()
+        # Use buffer_rgba() which is standard in newer matplotlib versions, or tostring_rgb() in older
+        try:
+            buf = fig.canvas.tostring_rgb()
+        except AttributeError:
+            # Fallback for newer matplotlib
+            buf = fig.canvas.buffer_rgba()
+            # Convert RGBA to RGB
+            plot_img_rgba = np.asarray(buf)
+            plot_img = plot_img_rgba[:, :, :3]
+        else:
+            ncols, nrows = fig.canvas.get_width_height()
+            plot_img = np.frombuffer(buf, dtype=np.uint8).reshape(nrows, ncols, 3)
+        
+        # Resize plot to match video height exactly
+        if plot_img.shape[0] != H:
+             plot_img = cv2.resize(plot_img, (int(plot_img.shape[1] * H / plot_img.shape[0]), H))
+             
+        # Combine
+        combined = np.hstack((img_left, plot_img))
+        vis.append(combined)
+        
+        if t % 20 == 0:
+            print(f"  Rendered frame {t}/{T}", end='\r')
+
+    print("")
+    plt.close(fig)
     iio.imwrite(out_path, np.array(vis), plugin="FFMPEG", fps=fps, macro_block_size=1)
     return out_path
 
