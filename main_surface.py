@@ -48,17 +48,21 @@ from utils.visualizer import visualize_tracks
 INPUT_DIR = "input_videos"
 DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
-CKPT_PATH = os.path.join(REPO_DIR, "checkpoints", "scaled_offline.pth")
 
 # Configuration
-MAX_POINTS = 1000
+MAX_POINTS = 30
 CHUNK_LEN = 100
 OVERLAP = 10
 
+
 def main():
     parser = argparse.ArgumentParser(description="Seismic Surface Tracker")
-    parser.add_argument("video", nargs="?", default=None, help="Input video filename or path")
-    parser.add_argument("output", nargs="?", default=OUTPUT_DIR, help="Output directory")
+    parser.add_argument(
+        "video", nargs="?", default=None, help="Input video filename or path"
+    )
+    parser.add_argument(
+        "output", nargs="?", default=OUTPUT_DIR, help="Output directory"
+    )
     args = parser.parse_args()
 
     # 1. Resolve Input
@@ -74,70 +78,57 @@ def main():
     else:
         inp = os.path.join(INPUT_DIR, DEFAULT_VIDEO)
         if not os.path.exists(inp):
-             print(f"Error: Default video not found {inp}")
-             sys.exit(1)
+            print(f"Error: Default video not found {inp}")
+            sys.exit(1)
 
     base_name = os.path.splitext(os.path.basename(inp))[0]
     out_dir = os.path.join(args.output, f"{base_name}_output_surface")
     os.makedirs(out_dir, exist_ok=True)
-    
+
     print(f"Processing: {inp}")
     print(f"Output to: {out_dir}")
 
     # 2. Logic Setup
     sampler = Sampler(roi_dir="rois")
+    engine = TrackingEngine()
     analyzer = Analyzer(output_dir=out_dir)
-    
+    print("Sampler, Engine, Analyzer is loaded successfully!")
+
     # 3. Read Video
     print("Reading frames...")
     frames, fps = read_frames(inp)
     T, H, W = frames.shape[0], frames.shape[1], frames.shape[2]
     print(f"Frames: T={T}, HxW={W}x{H}, fps={fps}")
-    
+
     # 4. ROI & Grid Generation
-    rois, roi_path = sampler.load_rois(base_name)
-    
+    rois = sampler.get_or_select_rois(base_name, frames[0])
     if rois is None:
-        can_interactive = bool(os.environ.get('DISPLAY')) or (os.name == 'nt')
-        if can_interactive:
-            print("No Surface ROI file found. Please select object surface.")
-            rois = sampler.select_rois_interactive(frames[0])
-            if rois and len(rois) > 0:
-                sampler.save_rois(roi_path, rois)
-            else:
-                print("No ROIs selected. Using full image.")
-        else:
-            print("Headless mode: Cannot select ROI interactively.")
-            sys.exit(1)
-    else:
-        print(f"Loaded ROIs from {roi_path}")
-        
+        print("ROI is unavailable.")
+        sys.exit(1)
+
     points = sampler.detect_roi_points(frames[0], rois, max_points=MAX_POINTS)
     if points.shape[0] == 0:
         print("No points detected within ROI. Exiting.")
         sys.exit(1)
     print(f"Detected {points.shape[0]} corner points in ROI.")
-    
-    # 5. Initialize Engine & Track
-    try:
-        engine = TrackingEngine(checkpoint_path=CKPT_PATH)
-    except FileNotFoundError as e:
-        print(e)
-        sys.exit(1)
 
-    tracks = engine.track_video_chunked(frames, points, chunk_len=CHUNK_LEN, overlap=OVERLAP)
+    # 5. Initialize Engine & Track
+    tracks,visibilities = engine.track_video_chunked(
+        frames, points, chunk_len=CHUNK_LEN, overlap=OVERLAP
+    )
     print(f"Tracking complete. Shape: {tracks.shape}")
-    
+
     # 6. Analyze & Visualize
     npz_path, csv_path = analyzer.save_tracks(base_name, tracks, fps)
     print(f"Saved tracks to {npz_path}")
-    
+
     vis_path = os.path.join(out_dir, f"tracked_surface_{base_name}.mp4")
-    visualize_tracks(frames, tracks, vis_path, fps, rois=rois)
+    visualize_tracks(frames, tracks, visibilities,vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
-    
+
     wave_path = analyzer.compute_and_save_waveform(base_name, tracks, fps)
     print(f"Saved Average Waveform to {wave_path}")
+
 
 if __name__ == "__main__":
     main()

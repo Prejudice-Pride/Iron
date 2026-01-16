@@ -2,6 +2,7 @@ import os
 import json
 import cv2
 import numpy as np
+import sys
 
 class Sampler:
     def __init__(self, roi_dir="rois"):
@@ -20,6 +21,29 @@ class Sampler:
             except Exception:
                 return None, path
         return None, path
+
+    def get_or_select_rois(self, base_name, frame_first):
+        """
+        Load ROIs from file, or interactively select if not found.
+        Returns ROIs list or None if headless and no file.
+        """
+        rois, roi_path = self.load_rois(base_name)
+        if rois is None:
+            can_interactive = bool(os.environ.get('DISPLAY')) or (os.name == 'nt')
+            if can_interactive:
+                print("No Surface ROI file found. Please select object surface.")
+                rois = self.select_rois_interactive(frame_first)
+                if rois and len(rois) > 0:
+                    self.save_rois(roi_path, rois)
+                else:
+                    print("No ROIs selected. Using full image.")
+                    return None
+            else:
+                print("Headless mode: Cannot select ROI interactively.")
+                return None
+        else:
+            print(f"Loaded ROIs from {roi_path}")
+        return rois
 
     def save_rois(self, path, rois):
         try:
@@ -88,7 +112,7 @@ class Sampler:
         cv2.destroyWindow(win)
         return rois
 
-    def detect_roi_points(self, frame_rgb, rois, max_points=1000, quality=0.01, min_dist=7):
+    def detect_roi_points(self, frame_rgb, rois, max_points=30, quality=0.01, min_dist=7):
         """
         使用 cv2.goodFeaturesToTrack 在 ROI 区域内检测角点。
         """

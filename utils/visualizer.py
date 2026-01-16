@@ -2,13 +2,14 @@ import cv2
 import numpy as np
 import imageio.v3 as iio
 
-def visualize_tracks(frames, tracks, out_path, fps, rois=None):
+def visualize_tracks(frames, tracks, visibilities, out_path, fps, rois=None):
     """
     Visualizes tracking results by drawing points and trails on video frames.
     
     Args:
         frames: (T, H, W, 3) RGB video frames
         tracks: (N, T, 2) Coordinates of tracked points
+        visibilities: (N, T) Vsibilities of tracked points
         out_path: Path to save the output video
         fps: Frames per second
         rois: Optional list of ROIs to draw [x1, y1, x2, y2]
