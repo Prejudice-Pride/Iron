@@ -14,7 +14,7 @@ print(COTRACKER_DIR)
 CKPT_PATH = os.path.join(COTRACKER_DIR, "checkpoints", "scaled_offline.pth")
 
 try:
-    from cotracker.predictor import CoTrackerPredictor
+    from cotracker.predictor import CoTrackerPredictor # type: ignore
 except ImportError:
     # If the above path hack didn't work (e.g. structure is different), let the caller handle it or fail
     pass

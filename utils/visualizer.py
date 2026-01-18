@@ -35,6 +35,7 @@ def visualize_tracks(frames, tracks, visibilities, out_path, fps, rois=None):
                 
         for i in range(N):
             pts = tracks[i]
+            pts_vis = visibilities[i]
             # Draw trails
             valid = ~np.isnan(pts[:t+1,0])
             if np.count_nonzero(valid) >= 2:
@@ -45,7 +46,11 @@ def visualize_tracks(frames, tracks, visibilities, out_path, fps, rois=None):
             # Draw current point
             if not np.isnan(pts[t,0]):
                 x,y = int(pts[t,0]), int(pts[t,1])
-                cv2.circle(img, (x,y), 3, colors[i], -1)
+                if pts_vis[t]:
+                    cv2.circle(img, (x,y), 3, colors[i], -1)
+                else:
+                    for angle in range(0, 360, 30):
+                        cv2.ellipse(img, (x,y), (3,3), 0, angle, angle+15, colors[i], 1)
         
         # Convert back to RGB for imageio
         vis.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
