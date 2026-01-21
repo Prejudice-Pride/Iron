@@ -90,21 +90,20 @@ class TrackingEngine:
         T = len(frames)
         N = points.shape[0]
 
-        # Initial queries
-        # CoTracker expects (1, N, 3) -> t, x, y
+        # Initial queries: CoTracker expects (1, N, 3) -> (t, x, y)
         q = np.zeros((1, N, 3), dtype=np.float32)
         q[0, :, 0] = 0
         q[0, :, 1:] = points
 
-        queries = torch.from_numpy(q).to(self.device)
-
-        frames_input = frames  # (T, H, W, 3)
-
+        # build tensors in the same style as chunked version:
+        # frames -> (1, T, 3, H, W), queries -> (1, N, 3)
         print("Processing video ...")
-        queries = (
-            torch.tensor(queries).permute(0, 3, 1, 2)[None].float().to(self.device)
+        frames_tensor = (
+            torch.tensor(frames).permute(0, 3, 1, 2)[None].float().to(self.device)
         )
-        pred_tracks, pred_visibilities = self.model(frames_input, queries=queries)
+        queries_tensor = torch.from_numpy(q).float().to(self.device)
+
+        pred_tracks, pred_visibilities = self.model(frames_tensor, queries=queries_tensor)
 
         return self._to_pixel_tracks(pred_tracks.cpu().numpy()), self._to_pixel_visibilities(pred_visibilities.cpu().numpy())
 

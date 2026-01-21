@@ -112,6 +112,62 @@ class Sampler:
         cv2.destroyWindow(win)
         return rois
 
+    def orb_non_max_suppression(self, keypoints, min_dist):
+        """
+        对 cv2.KeyPoint 列表进行非极大值抑制（NMS）。
+        按照 response (响应强度) 排序，移除距离小于 min_dist 的较弱特征点。
+        """
+        if not keypoints:
+            return []
+        
+        # 按响应值从高到低排序
+        kp_sorted = sorted(keypoints, key=lambda x: x.response, reverse=True)
+        keep = []
+        
+        for i in range(len(kp_sorted)):
+            cand = kp_sorted[i]
+            is_best = True
+            for accepted in keep:
+                dist = np.linalg.norm(np.array(cand.pt) - np.array(accepted.pt))
+                if dist < min_dist:
+                    is_best = False
+                    break
+            if is_best:
+                keep.append(cand)
+        
+        return keep
+
+    def GoodFeatures_non_max_suppression_generic(self, pts, scores, min_dist):
+        """
+        通用非极大值抑制：适用于任何带得分的坐标点集。
+        
+        Args:
+            pts: np.ndarray, 形状为 (N, 2), 坐标为 [x, y]
+            scores: np.ndarray, 形状为 (N,), 对应的响应强度/质量分数
+            min_dist: 最小距离阈值
+        """
+        if len(pts) == 0:
+            return np.empty((0, 2), dtype=np.float32)
+
+        # 1. 根据得分从高到低排序
+        order = np.argsort(scores)[::-1]
+        pts = pts[order]
+        
+        keep = []
+        for p in pts:
+            if not keep:
+                keep.append(p)
+                continue
+            
+            # 2. 向量化计算：一次性计算当前点到所有已保留点的距离
+            dists = np.linalg.norm(np.array(keep) - p, axis=1)
+            
+            # 3. 如果距离所有已保留点都足够远，则保留
+            if np.all(dists >= min_dist):
+                keep.append(p)
+                
+        return np.array(keep, dtype=np.float32)
+
     def detect_roi_points(self, frame_rgb, rois, max_points=30, quality=0.01, min_dist=7):
         """
         使用 cv2.goodFeaturesToTrack 在 ROI 区域内检测角点。
@@ -143,3 +199,30 @@ class Sampler:
             return np.empty((0, 2), dtype=np.float32)
         
         return pts.reshape(-1, 2).astype(np.float32)
+
+    def detect_roi_points_orb(self, frame_rgb, rois, max_points=30, quality=0.01, min_dist=7):
+        """
+        使用 cv2.ORB 在 ROI 区域内检测角点。
+        """
+        H, W = frame_rgb.shape[:2]
+        gray = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
+        
+        # 创建掩码
+        mask = np.zeros((H, W), dtype=np.uint8)
+        if not rois or len(rois) == 0:
+            mask[:] = 255
+        else:
+            for r in rois:
+                x1, y1, x2, y2 = map(int, r)
+                x1, x2 = max(0, min(W-1, x1)), max(0, min(W-1, x2))
+                y1, y2 = max(0, min(H-1, y1)), max(0, min(H-1, y2))
+                mask[y1:y2+1, x1:x2+1] = 255
+
+        # 检测角点
+        orb = cv2.ORB_create(nfeatures=max_points)
+        kp = orb.detect(gray, mask=mask)
+        
+        if not kp:
+            return np.empty((0, 2), dtype=np.float32)
+        
+        return np.array([p.pt for p in kp], dtype=np.float32)

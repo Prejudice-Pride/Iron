@@ -46,7 +46,7 @@ from utils.video_io import read_frames
 from utils.visualizer import visualize_tracks
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample.mp4"
+DEFAULT_VIDEO = "rolling2.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -113,9 +113,7 @@ def main():
     print(f"Detected {points.shape[0]} corner points in ROI.")
 
     # 5. Initialize Engine & Track
-    tracks,visibilities = engine.track_video_chunked(
-        frames, points, chunk_len=CHUNK_LEN, overlap=OVERLAP
-    )
+    tracks, visibilities = engine.track_video(frames, points)
     print(f"Tracking complete. Shape: {tracks.shape}")
 
     # 6. Analyze & Visualize
@@ -123,7 +121,7 @@ def main():
     print(f"Saved tracks to {npz_path}")
 
     vis_path = os.path.join(out_dir, f"tracked_surface_{base_name}.mp4")
-    visualize_tracks(frames, tracks, visibilities,vis_path, fps, rois=rois)
+    visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
 
     wave_path = analyzer.compute_and_save_waveform(base_name, tracks, fps)
