@@ -168,7 +168,7 @@ class Sampler:
                 
         return np.array(keep, dtype=np.float32)
 
-    def detect_roi_points(self, frame_rgb, rois, max_points=30, quality=0.01, min_dist=7):
+    def detect_roi_points(self, frame_rgb, rois, max_points=30, quality=0.5, min_dist=15):
         """
         使用 cv2.goodFeaturesToTrack 在 ROI 区域内检测角点。
         """
@@ -200,7 +200,7 @@ class Sampler:
         
         return pts.reshape(-1, 2).astype(np.float32)
 
-    def detect_roi_points_orb(self, frame_rgb, rois, max_points=30, quality=0.01, min_dist=7):
+    def detect_roi_points_orb(self, frame_rgb, rois, max_points=30, quality=0.01, min_dist=15):
         """
         使用 cv2.ORB 在 ROI 区域内检测角点。
         """
@@ -219,10 +219,17 @@ class Sampler:
                 mask[y1:y2+1, x1:x2+1] = 255
 
         # 检测角点
-        orb = cv2.ORB_create(nfeatures=max_points)
+        orb = cv2.ORB_create(nfeatures=max_points * 2)  # 检测更多点以供 NMS 筛选
         kp = orb.detect(gray, mask=mask)
         
         if not kp:
             return np.empty((0, 2), dtype=np.float32)
+        
+        # 应用非极大值抑制
+        kp = self.orb_non_max_suppression(kp, min_dist)
+        
+        # 限制最大点数
+        if len(kp) > max_points:
+            kp = kp[:max_points]
         
         return np.array([p.pt for p in kp], dtype=np.float32)

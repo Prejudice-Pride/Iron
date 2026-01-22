@@ -39,14 +39,14 @@ REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker")
 if REPO_DIR not in sys.path and os.path.exists(REPO_DIR):
     sys.path.insert(0, REPO_DIR)
 
-from core.engine import TrackingEngine
+from core.track_on_engine import TrackingEngine
 from core.sampler import Sampler
 from core.analyzer import Analyzer
 from utils.video_io import read_frames
 from utils.visualizer import visualize_tracks
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "rolling2.mp4"
+DEFAULT_VIDEO = "rolling.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -106,7 +106,7 @@ def main():
         print("ROI is unavailable.")
         sys.exit(1)
 
-    points = sampler.detect_roi_points(frames[0], rois, max_points=MAX_POINTS)
+    points = sampler.detect_roi_points_orb(frames[0], rois, max_points=MAX_POINTS)
     if points.shape[0] == 0:
         print("No points detected within ROI. Exiting.")
         sys.exit(1)
