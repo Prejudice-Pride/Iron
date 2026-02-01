@@ -39,7 +39,7 @@ REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker")
 if REPO_DIR not in sys.path and os.path.exists(REPO_DIR):
     sys.path.insert(0, REPO_DIR)
 
-from core.track_on_engine import TrackingEngine
+from core.engine import TrackingEngine
 from core.sampler import Sampler
 from core.analyzer import Analyzer
 from utils.video_io import read_frames

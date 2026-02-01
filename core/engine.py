@@ -82,10 +82,10 @@ class TrackingEngine:
 
     def track_video(self, frames, points):
         """
-        Run tracking on video in chunks.
+        Run tracking on video in one go.
         frames: (T, H, W, 3) numpy array
         points: (N, 2) initial points
-        Returns: (N, T, 2) tracks
+        Returns: (N, T, 2) tracks, (N, T) visibilities
         """
         T = len(frames)
         N = points.shape[0]
@@ -95,17 +95,19 @@ class TrackingEngine:
         q[0, :, 0] = 0
         q[0, :, 1:] = points
 
-        # build tensors in the same style as chunked version:
-        # frames -> (1, T, 3, H, W), queries -> (1, N, 3)
         print("Processing video ...")
+        # 使用 torch.from_numpy 效率更高
         frames_tensor = (
-            torch.tensor(frames).permute(0, 3, 1, 2)[None].float().to(self.device)
+            torch.from_numpy(frames).permute(0, 3, 1, 2)[None].float().to(self.device)
         )
         queries_tensor = torch.from_numpy(q).float().to(self.device)
 
-        pred_tracks, pred_visibilities = self.model(frames_tensor, queries=queries_tensor)
+        # 增加 no_grad 节省资源
+        with torch.no_grad():
+            pred_tracks, pred_visibilities = self.model(frames_tensor, queries=queries_tensor)
 
-        return self._to_pixel_tracks(pred_tracks.cpu().numpy()), self._to_pixel_visibilities(pred_visibilities.cpu().numpy())
+        return self._to_pixel_tracks(pred_tracks.cpu().numpy()), \
+               self._to_pixel_visibilities(pred_visibilities.cpu().numpy())
 
     def track_video_chunked(self, frames, points, chunk_len=40, overlap=10):
         """
