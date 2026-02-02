@@ -27,6 +27,7 @@ if REPO_DIR not in sys.path and os.path.exists(REPO_DIR):
 from core.engine import TrackingEngine
 from core.sampler import Sampler
 from core.analyzer import Analyzer
+from core.cancel_analyzer import CancelAnalyzer
 from utils.video_io import read_frames
 from utils.visualizer import visualize_tracks
 
@@ -77,7 +78,8 @@ def main():
     sampler = Sampler(roi_dir="rois")
     engine = TrackingEngine()
     analyzer = Analyzer(output_dir=out_dir)
-    print("Sampler, Engine, Analyzer is loaded successfully!")
+    c_analyzer = CancelAnalyzer(output_dir=out_dir)
+    print("Sampler, Engine, Analyzer, and CancelAnalyzer are loaded successfully!")
 
     # 3. Read Video
     print("Reading frames...")
@@ -147,7 +149,7 @@ def main():
     
     # 6. Tracking
     print("Tracking video...")
-    tracks, visibilities = engine.track_video(frames, all_points)
+    tracks, visibilities = engine.track_video_chunked(frames, all_points, chunk_len=CHUNK_LEN, overlap=OVERLAP)
     print(f"Tracking complete. Shape: {tracks.shape}")
     
     # 7. Cancellation Logic
@@ -193,6 +195,11 @@ def main():
     print("Saving CORRECTED results...")
     npz_path, csv_path = analyzer.save_tracks(f"{base_name}_corrected", corrected_tracks, fps)
     print(f"Saved corrected tracks to {npz_path}")
+
+    # Generate Comparison Plot
+    print("Generating cancellation comparison chart...")
+    plot_path = c_analyzer.plot_comparison(base_name, tracks_target, corrected_tracks, fps)
+    print(f"Saved cancellation analysis to {plot_path}")
 
     # Visualize (We visualize the RAW tracking to show *what* was tracked, 
     # but we might want to indicate which were target vs ref)
