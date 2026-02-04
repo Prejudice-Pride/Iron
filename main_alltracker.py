@@ -107,6 +107,38 @@ def main():
         print("ROI is unavailable.")
         sys.exit(1)
 
+    # ---------------------------------------------------------
+    # ENGINEERED CALIBRATION SETUP (Sample.mp4 Specific)
+    # ---------------------------------------------------------
+    if base_name == "sample":
+        print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
+        # Source Pixels (Extracted manually)
+        src_calib = [
+            # Group 1: Left Lane Line 1 (ll1) - Bottom Left
+            [297, 860], [309, 863], [609, 718], [620, 721],
+            # Group 2: Right Lane Line 2 (rl2) - Top Right
+            [1309, 701], [1319, 702], [1367, 620], [1376, 621]
+        ]
+        
+        # Destination Physical Coordinates (mm)
+        # Origin (0,0) is bottom-left corner of ll1
+        # X axis: Along road (longitudinal)
+        # Y axis: Across road (lateral, towards right lane)
+        # Lane Width: 3500mm, Line Gap: 4000mm, Line Len: 2000mm, DoubleYellow: 450mm
+        # Y_offset to rl2 = LeftLane1 + DoubleYellow + RightLane1 = 3500 + 450 + 3500 = 7450mm
+        # X_offset to rl2 (2nd line) = Line1(2000) + Gap(4000) = 6000mm
+        
+        dst_calib = [
+            # Group 1: ll1 (Reference)
+            [0, 0], [0, 150], [2000, 0], [2000, 150],
+            # Group 2: rl2 (Offset)
+            [6000, 7450], [6000, 7600], [8000, 7450], [8000, 7600]
+        ]
+        
+        analyzer.setup_calibration(src_calib, dst_calib)
+    else:
+        print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
+
     # 仍然使用角点检测，这些坐标将作为 AllTracker Dense Map 的采样索引
     points = sampler.detect_roi_points_orb(frames[0], rois, max_points=MAX_POINTS)
     if points.shape[0] == 0:
@@ -131,8 +163,22 @@ def main():
     visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
 
+    # 1. Save Waveform (Now includes both X and Y for all points in CSV)
     wave_path = analyzer.compute_and_save_waveform(base_name, tracks, fps)
     print(f"Saved Average Waveform to {wave_path}")
+    
+    # 2. Plot Side-by-Side X/Y Waveforms
+    double_wave_path = analyzer.compute_and_save_double_waveforms(base_name, tracks, fps)
+    print(f"Saved Double Waveform Plot to {double_wave_path}")
+
+    # 3. Compute and save spectrum (Now includes FFT for both X and Y)
+    spec_path = analyzer.compute_and_save_spectrum(base_name, tracks, fps)
+    print(f"Saved Frequency Spectrum to {spec_path}")
+
+    # 4. Calculate Seismic Intensity (Intensity Calculation at the end)
+    # Note: pixels_to_mm depends on your scene, set a default or calibrated value here
+    # If calibration was setup, pixels_to_mm argument is ignored in favor of Homography
+    intensity_results = analyzer.calculate_intensity(tracks, fps, pixels_to_mm=10.0) 
 
 
 if __name__ == "__main__":
