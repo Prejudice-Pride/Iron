@@ -10,7 +10,7 @@ def _interactive_select_coords(img):
             points.append([x, y])
             print(f"Clicked at: {x}, {y}")
             # Draw a circle on the image
-            cv2.circle(clone, (x, y), 5, (0, 0, 255), -1)
+            cv2.circle(clone, (x, y), 1, (0, 0, 255), -1)
             cv2.imshow("Select Coordinates", clone)
 
     cv2.namedWindow("Select Coordinates")
@@ -31,7 +31,7 @@ def _interactive_select_coords(img):
                 print(f"Removed last point. Remaining: {len(points)}")
                 clone = img.copy()
                 for p in points:
-                    cv2.circle(clone, tuple(p), 5, (0, 0, 255), -1)
+                    cv2.circle(clone, tuple(p), 1, (0, 0, 255), -1)
                 cv2.imshow("Select Coordinates", clone)
         elif key == ord('q') or key == 27:  # q or Esc
             break
@@ -253,10 +253,10 @@ def select_lines_from_media(media_path):
 
 def main():
     image_path = "input_videos\sample.mp4"
-    # points = select_coords_from_media(image_path)
+    points = select_coords_from_media(image_path)
     # boxes = select_boxes_from_media(image_path)
-    lines = select_lines_from_media(image_path)
-    print("All selected boxes:", lines)
+    # lines = select_lines_from_media(image_path)
+    print("All selected boxes:", points)
 
 if __name__ == '__main__':
     main()

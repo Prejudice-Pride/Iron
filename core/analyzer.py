@@ -309,20 +309,25 @@ class Analyzer:
 
     def calculate_intensity(self, tracks, fps, pixels_to_mm=None):
         """
-        Calculate Seismic Intensity (simplified Chinese Intensity Scale GB/T 17742).
-        Uses a sliding window for PGA/PGV.
+        理清烈度计算的全流程逻辑:
+        1. 轨迹映射：利用单应矩阵 (Homography) 或 比例尺将像素坐标还原为物理坐标 (mm)。
+        2. 信号集成：对 ROI 内多个追踪点进行鲁棒平均，获得物体中心运动信号。
+        3. 运动学推导：通过一阶和二阶数值微分获取速度 (mm/s) 和加速度 (mm/s^2)。
+        4. 特征峰值提取：利用滑动窗口技术捕捉峰值水平加速度 (PGA) 和峰值水平速度 (PGV)。
+        5. 烈度评估：基于 GB/T 17742-2020 标准映射计算地震烈度。
         """
+        if pixels_to_mm is not None:
+             self.pixels_to_mm_fallback = pixels_to_mm
+
         N, T, _ = tracks.shape
         dt = 1.0 / fps
         
-        # 1. Transform coordinates to physical (mm)
-        if pixels_to_mm is not None:
-             # Manual override if provided
-             self.pixels_to_mm_fallback = pixels_to_mm
-             
-        phys_tracks_all = self.pixel_to_physical(tracks) # (N, T, 2)
+        # --- Step 1: 物理尺度恢复 (Scale Restoration) ---
+        # 如果有单应矩阵则执行透视变换，否则按 fallback 比例缩放
+        phys_tracks_all = self.pixel_to_physical(tracks) # 结果单位: mm
         
-        # Average multiple points to get a stable signal
+        # --- Step 2: 信号集成 (Signal Aggregation) ---
+        # 融合多个追踪点的位移，减少单点追踪噪声
         valid_masks = ~np.isnan(phys_tracks_all[:, :, 0])
         mean_phys_tracks = np.zeros((T, 2))
         for t in range(T):
@@ -331,19 +336,30 @@ class Analyzer:
             else:
                 mean_phys_tracks[t] = mean_phys_tracks[t-1] if t > 0 else np.array([0, 0])
 
-        # Displacement in mm (relative to start)
+        # 获取相对起始点的位移 (Relative Displacement)
         disp_mm = (mean_phys_tracks - mean_phys_tracks[0])
         
-        # 2. Velocity (v = dx/dt) - mm/s
-        vel = np.diff(disp_mm, axis=0) / dt
-        # 3. Acceleration (a = dv/dt) - mm/s^2 (Gal = 10 mm/s^2)
+        # --- (Optional) Signal Smoothing: 滑动平均以抑制微分噪声 ---
+        window_smooth = max(3, int(fps // 10)) # ~0.1s 窗口
+        def smooth_signal(s):
+            return np.convolve(s, np.ones(window_smooth)/window_smooth, mode='same')
+        
+        disp_mm_smooth = np.zeros_like(disp_mm)
+        disp_mm_smooth[:, 0] = smooth_signal(disp_mm[:, 0])
+        disp_mm_smooth[:, 1] = smooth_signal(disp_mm[:, 1])
+
+        # --- Step 3: 运动学推导 (Kinematics Calculation) ---
+        # 速度 v = ∆d / ∆t (mm/s)
+        vel = np.diff(disp_mm_smooth, axis=0) / dt
+        # 加速度 a = ∆v / ∆t (mm/s^2)
         acc = np.diff(vel, axis=0) / dt
         
-        # Pad with 0 to keep same length as T for windowing
+        # 对齐长度
         vel = np.vstack([vel, [0, 0]])
         acc = np.vstack([acc, [0, 0], [0, 0]])
 
-        # 4. Sliding Window (2.0 seconds)
+        # --- Step 4: 峰值特征提取 (Peak Feature Extraction) ---
+        # 采用 2.0 秒滑动窗口捕捉最大震动特征
         window_size = int(2.0 * fps)
         if window_size > T: window_size = T
         
@@ -354,51 +370,52 @@ class Analyzer:
             window_acc = acc[i : i + window_size]
             window_vel = vel[i : i + window_size]
             
-            # Resultant vector magnitude: sqrt(ax^2 + ay^2)
+            # 合成矢量大小: sqrt(x^2 + y^2)
             acc_mags = np.sqrt(np.sum(window_acc**2, axis=1))
             vel_mags = np.sqrt(np.sum(window_vel**2, axis=1))
             
             max_pga = max(max_pga, np.max(acc_mags))
             max_pgv = max(max_pgv, np.max(vel_mags))
         
-        # 5. Mapping to Intensity (Simplified GB/T 17742-2020)
-        # Intensity 6 is usually PGA ~ 0.05g (approx 50 Gal or 500 mm/s^2)
-        # PGA in Gal (cm/s^2), here we have mm/s^2 so / 10
+        # --- Step 5: 烈度映射 (Intensity Mapping - GB/T 17742) ---
+        # PGA 单位转化: mm/s^2 -> Gal (cm/s^2)
         pga_gal = max_pga / 10.0
         pgv_cm_s = max_pgv / 10.0
         
-        def mock_intensity(pga, pgv):
-            # GB/T 17742-2020 Mapping
-            if pga < 0.8: return 1
-            if pga < 2.5: return 2
-            if pga < 8:   return 3
-            if pga < 22:  return 4
-            if pga < 44:  return 5
-            if pga < 89:  return 6
-            if pga < 177: return 7
-            if pga < 353: return 8
-            if pga < 707: return 9
-            if pga < 1414: return 10
-            return 12
-
-        intensity = mock_intensity(pga_gal, pgv_cm_s)
+        intensity = self._map_to_gbt17742(pga_gal, pgv_cm_s)
         
-        # Console Output
-        print("\n" + "="*60)
-        print("SEISMIC INTENSITY CALCULATION REPORT (ENGINEERING CALIBRATION)")
-        print("="*60)
-        cal_mode = "HOMOGRAPHY MATRIX" if self.homography_matrix is not None else f"LINEAR SCALE ({self.pixels_to_mm_fallback} mm/pix)"
-        print(f"Calibration Mode: {cal_mode}")
-        print(f"Formula: Velocity v=∆d/∆t, Accel a=∆v/∆t, PGA=max(sqrt(ax^2+ay^2))")
-        print(f"Sliding Window: 2.0s ({window_size} frames)")
-        print("-" * 60)
-        print(f"Peak Ground Acceleration (PGA): {max_pga:.2f} mm/s^2 ({pga_gal:.2f} Gal)")
-        print(f"Peak Ground Velocity (PGV):     {max_pgv:.2f} mm/s ({(pgv_cm_s):.2f} cm/s)")
-        print(f"Resultant Intensity (GB/T 17742): {intensity} 度")
-        print("="*60 + "\n")
+        # 输出报告
+        self._print_intensity_report(max_pga, pga_gal, max_pgv, pgv_cm_s, intensity, window_size)
         
         return {
             "pga": max_pga,
             "pgv": max_pgv,
             "intensity": intensity
         }
+
+    def _map_to_gbt17742(self, pga, pgv):
+        """依据中国地震烈度表 (GB/T 17742-2020) 进行简约映射"""
+        if pga < 0.8: return 1
+        if pga < 2.5: return 2
+        if pga < 8:   return 3
+        if pga < 22:  return 4
+        if pga < 44:  return 5
+        if pga < 89:  return 6   # 烈度 VI 度
+        if pga < 177: return 7   # 烈度 VII 度
+        if pga < 353: return 8   # 烈度 VIII 度
+        if pga < 707: return 9
+        if pga < 1414: return 10
+        return 12
+
+    def _print_intensity_report(self, max_pga, pga_gal, max_pgv, pgv_cm_s, intensity, window_size):
+        print("\n" + "="*60)
+        print("地震烈度计算报告 (Seismic Intensity Analysis)")
+        print("="*60)
+        cal_mode = "透视变换 (Homography)" if self.homography_matrix is not None else f"线性缩放 ({self.pixels_to_mm_fallback} mm/pix)"
+        print(f"校准模式: {cal_mode}")
+        print(f"分析窗口: 2.0s ({window_size} 帧)")
+        print("-" * 60)
+        print(f"最大水平加速度 (PGA): {max_pga:.2f} mm/s^2 ({pga_gal:.2f} Gal)")
+        print(f"最大水平速度 (PGV):     {max_pgv:.2f} mm/s ({(pgv_cm_s):.2f} cm/s)")
+        print(f"判定烈度 (GB/T 17742): {intensity} 度")
+        print("="*60 + "\n")

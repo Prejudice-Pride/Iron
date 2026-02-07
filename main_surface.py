@@ -46,7 +46,7 @@ from utils.video_io import read_frames
 from utils.visualizer import visualize_tracks
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "rolling.mp4"
+DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -113,18 +113,12 @@ def main():
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
         src_calib = [
-            # Group 1: Left Lane Line 1 (ll1) - Bottom Left
-            [297, 860], [309, 863], [609, 718], [620, 721],
-            # Group 2: Right Lane Line 2 (rl2) - Top Right
-            [1309, 701], [1319, 702], [1367, 620], [1376, 621]
+            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
         
         # Destination Physical Coordinates (mm)
         dst_calib = [
-            # Group 1: ll1 (Reference)
-            [0, 0], [0, 150], [2000, 0], [2000, 150],
-            # Group 2: rl2 (Offset)
-            [6000, 7450], [6000, 7600], [8000, 7450], [8000, 7600]
+            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
         ]
         
         analyzer.setup_calibration(src_calib, dst_calib)
@@ -138,7 +132,7 @@ def main():
     print(f"Detected {points.shape[0]} corner points in ROI.")
 
     # 5. Initialize Engine & Track
-    tracks, visibilities = engine.track_video(frames, points)
+    tracks, visibilities = engine.track_video_chunked(frames, points, chunk_len=CHUNK_LEN)
     print(f"Tracking complete. Shape: {tracks.shape}")
 
     # 6. Analyze & Visualize
