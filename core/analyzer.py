@@ -359,38 +359,75 @@ class Analyzer:
         acc = np.vstack([acc, [0, 0], [0, 0]])
 
         # --- Step 4: 峰值特征提取 (Peak Feature Extraction) ---
-        # 采用 2.0 秒滑动窗口捕捉最大震动特征
+        # 计算全序列的合成加速度和速度模长
+        acc_mags_all = np.sqrt(np.sum(acc**2, axis=1))
+        vel_mags_all = np.sqrt(np.sum(vel**2, axis=1))
+
+        # 1. 传统峰值法 (Traditional PGA)
+        # 采用 2.0 秒滑动窗口捕捉最大震动特征 (地震工程常用窗口)
         window_size = int(2.0 * fps)
         if window_size > T: window_size = T
         
         max_pga = 0.0
         max_pgv = 0.0
-        
         for i in range(T - window_size + 1):
-            window_acc = acc[i : i + window_size]
-            window_vel = vel[i : i + window_size]
-            
-            # 合成矢量大小: sqrt(x^2 + y^2)
-            acc_mags = np.sqrt(np.sum(window_acc**2, axis=1))
-            vel_mags = np.sqrt(np.sum(window_vel**2, axis=1))
-            
-            max_pga = max(max_pga, np.max(acc_mags))
-            max_pgv = max(max_pgv, np.max(vel_mags))
+            max_pga = max(max_pga, np.max(acc_mags_all[i : i + window_size]))
+            max_pgv = max(max_pgv, np.max(vel_mags_all[i : i + window_size]))
         
+        # 2. 统计百分位法 (Statistical P95 PGA)
+        # 取第 95 百分位值，有效过滤单帧算法跳动带来的噪点
+        p95_pga = np.percentile(acc_mags_all, 95)
+
+        # 3. 阿里亚斯烈度 (Arias Intensity - Ia)
+        # 物理意义：代表震动总能量的积分指标。Ia = (pi/2g) * integral(a^2 dt)
+        g_mm_s2 = 9806.65 # 标准重力加速度
+        arias_intensity = (np.pi / (2 * g_mm_s2)) * np.sum(acc_mags_all**2 * dt)
+
+        # 4. 有效设计加速度 (Effective Design Acceleration)
+        # 业内标准做法：取最大峰值的 75% 作为结构实际感受到的持续加速度
+        effective_pga = 0.75 * max_pga
+
         # --- Step 5: 烈度映射 (Intensity Mapping - GB/T 17742) ---
         # PGA 单位转化: mm/s^2 -> Gal (cm/s^2)
         pga_gal = max_pga / 10.0
         pgv_cm_s = max_pgv / 10.0
         
-        intensity = self._map_to_gbt17742(pga_gal, pgv_cm_s)
+        # 为四种方法分别计算烈度评估
+        intensity_m1 = self._map_to_gbt17742(pga_gal, pgv_cm_s)
+        intensity_m2 = self._map_to_gbt17742(p95_pga / 10.0, 0) # 仅按加速度映射
+        intensity_m4 = self._map_to_gbt17742(effective_pga / 10.0, 0) # 仅按加速度映射
         
+        # 针对 Arias Intensity (Ia)，采用学术界常用的经验转换（用于对比参考）
+        # 注：Ia 为能量指标，此处将其映射到大致感知的烈度量级
+        if arias_intensity > 0:
+            # 这是一个参考映射：Ia 与烈度的对数关系
+            log_ia = np.log10(arias_intensity)
+            # 简化近似：Ia=0.01~1 对应 5-8 度
+            if arias_intensity < 0.001: intensity_m3 = 1
+            elif arias_intensity < 0.005: intensity_m3 = 3
+            elif arias_intensity < 0.02: intensity_m3 = 5
+            elif arias_intensity < 0.1: intensity_m3 = 6
+            elif arias_intensity < 0.5: intensity_m3 = 7
+            elif arias_intensity < 2.0: intensity_m3 = 8
+            else: intensity_m3 = 9
+        else:
+            intensity_m3 = 0
+
         # 输出报告
-        self._print_intensity_report(max_pga, pga_gal, max_pgv, pgv_cm_s, intensity, window_size)
+        self._print_intensity_report(
+            max_pga, pga_gal, max_pgv, pgv_cm_s, 
+            intensity_m1, window_size, 
+            p95_pga, arias_intensity, effective_pga,
+            intensity_m2, intensity_m3, intensity_m4
+        )
         
         return {
             "pga": max_pga,
             "pgv": max_pgv,
-            "intensity": intensity
+            "intensity_pga": intensity_m1,
+            "intensity_p95": intensity_m2,
+            "intensity_arias": intensity_m3,
+            "intensity_effective": intensity_m4
         }
 
     def _map_to_gbt17742(self, pga, pgv):
@@ -407,15 +444,33 @@ class Analyzer:
         if pga < 1414: return 10
         return 12
 
-    def _print_intensity_report(self, max_pga, pga_gal, max_pgv, pgv_cm_s, intensity, window_size):
-        print("\n" + "="*60)
-        print("地震烈度计算报告 (Seismic Intensity Analysis)")
-        print("="*60)
+    def _print_intensity_report(self, max_pga, pga_gal, max_pgv, pgv_cm_s, intensity, window_size, p95_pga, arias_intensity, effective_pga, intensity_m2, intensity_m3, intensity_m4):
+        print("\n" + "="*70)
+        print("地震烈度多维度分析报告 (Multi-Dimensional Seismic Analysis)")
+        print("="*70)
         cal_mode = "透视变换 (Homography)" if self.homography_matrix is not None else f"线性缩放 ({self.pixels_to_mm_fallback} mm/pix)"
         print(f"校准模式: {cal_mode}")
         print(f"分析窗口: 2.0s ({window_size} 帧)")
-        print("-" * 60)
-        print(f"最大水平加速度 (PGA): {max_pga:.2f} mm/s^2 ({pga_gal:.2f} Gal)")
-        print(f"最大水平速度 (PGV):     {max_pgv:.2f} mm/s ({(pgv_cm_s):.2f} cm/s)")
-        print(f"判定烈度 (GB/T 17742): {intensity} 度")
-        print("="*60 + "\n")
+        print("-" * 70)
+        
+        print(f"[方法 1] 传统峰值法 (PGA - Absolute Peak):")
+        print(f"   最大水平加速度: {max_pga:.2f} mm/s^2 ({pga_gal:.2f} Gal)")
+        print(f"   最大水平速度:   {max_pgv:.2f} mm/s ({pgv_cm_s:.2f} cm/s)")
+        print(f"   >>> 评估烈度: {intensity} 度")
+        print("-" * 40)
+        
+        print(f"[方法 2] 统计百分位法 (P95 Robust Peak):")
+        print(f"   P95 加速度:     {p95_pga:.2f} mm/s^2 ({p95_pga/10.0:.2f} Gal)")
+        print(f"   >>> 评估烈度: {intensity_m2} 度 (更具抗噪性)")
+        print("-" * 40)
+        
+        print(f"[方法 3] 能量积分法 (Arias Intensity - Ia):")
+        print(f"   阿里亚斯烈度:   {arias_intensity:.4f} m/s")
+        print(f"   >>> 评估烈度: {intensity_m3} 度 (能量等效量级)")
+        print("-" * 40)
+        
+        print(f"[方法 4] 有效设计加速度 (Effective Acceleration):")
+        print(f"   有效加速度:     {effective_pga:.2f} mm/s^2 ({effective_pga/10.0:.2f} Gal)")
+        print(f"   >>> 评估烈度: {intensity_m4} 度 (结构设计实际感受)")
+        
+        print("="*70 + "\n")
