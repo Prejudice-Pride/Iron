@@ -339,20 +339,39 @@ class Analyzer:
         # 获取相对起始点的位移 (Relative Displacement)
         disp_mm = (mean_phys_tracks - mean_phys_tracks[0])
         
-        # --- (Optional) Signal Smoothing: 滑动平均以抑制微分噪声 ---
-        window_smooth = max(3, int(fps // 10)) # ~0.1s 窗口
-        def smooth_signal(s):
-            return np.convolve(s, np.ones(window_smooth)/window_smooth, mode='same')
+        # --- (Optional) Signal Smoothing: 应用低通滤波以抑制求导放大的高频噪声 ---
         
+        cutoff = 2.0
+        
+        from scipy.signal import butter, filtfilt
+        def lowpass_filter(data, cutoff, fs=30.0, order=4):
+            nyq = 0.5 * fs
+            normal_cutoff = cutoff / nyq
+            b, a = butter(order, normal_cutoff, btype='low', analog=False)
+            # 处理 NaN: 仅对有效数据段滤波
+            mask = ~np.isnan(data)
+            if np.sum(mask) > 15: # 确保数据量足够滤波
+                filtered = np.copy(data)
+                filtered[mask] = filtfilt(b, a, data[mask])
+                return filtered
+            return data
+
         disp_mm_smooth = np.zeros_like(disp_mm)
-        disp_mm_smooth[:, 0] = smooth_signal(disp_mm[:, 0])
-        disp_mm_smooth[:, 1] = smooth_signal(disp_mm[:, 1])
+        disp_mm_smooth[:, 0] = lowpass_filter(disp_mm[:, 0], cutoff, fs=fps)
+        disp_mm_smooth[:, 1] = lowpass_filter(disp_mm[:, 1], cutoff, fs=fps)
 
         # --- Step 3: 运动学推导 (Kinematics Calculation) ---
         # 速度 v = ∆d / ∆t (mm/s)
         vel = np.diff(disp_mm_smooth, axis=0) / dt
+        # 再次滤波：消除一阶导数产生的噪声
+        vel[:, 0] = lowpass_filter(vel[:, 0], cutoff, fs=fps)
+        vel[:, 1] = lowpass_filter(vel[:, 1], cutoff, fs=fps)
+        
         # 加速度 a = ∆v / ∆t (mm/s^2)
         acc = np.diff(vel, axis=0) / dt
+        # 再次滤波：消除二阶导数极其严重的放大噪声
+        acc[:, 0] = lowpass_filter(acc[:, 0], cutoff, fs=fps)
+        acc[:, 1] = lowpass_filter(acc[:, 1], cutoff, fs=fps)
         
         # 对齐长度
         vel = np.vstack([vel, [0, 0]])
@@ -380,8 +399,12 @@ class Analyzer:
 
         # 3. 阿里亚斯烈度 (Arias Intensity - Ia)
         # 物理意义：代表震动总能量的积分指标。Ia = (pi/2g) * integral(a^2 dt)
-        g_mm_s2 = 9806.65 # 标准重力加速度
-        arias_intensity = (np.pi / (2 * g_mm_s2)) * np.sum(acc_mags_all**2 * dt)
+        # 修正：将加速度从 mm/s^2 转换为 m/s^2 以符合标准国际单位制 (Standard units: m/s)
+        acc_m_s2 = acc_mags_all / 1000.0  # 1000 mm = 1 m
+        g_m_s2 = 9.80665                  # 标准重力加速度 (m/s^2)
+        
+        # 积分计算 (单位为 m/s)
+        arias_intensity = (np.pi / (2 * g_m_s2)) * np.sum(acc_m_s2**2 * dt)
 
         # 4. 有效设计加速度 (Effective Design Acceleration)
         # 业内标准做法：取最大峰值的 75% 作为结构实际感受到的持续加速度
@@ -464,12 +487,12 @@ class Analyzer:
         print(f"   >>> 评估烈度: {intensity_m2} 度 (更具抗噪性)")
         print("-" * 40)
         
-        print(f"[方法 3] 能量积分法 (Arias Intensity - Ia):")
-        print(f"   阿里亚斯烈度:   {arias_intensity:.4f} m/s")
-        print(f"   >>> 评估烈度: {intensity_m3} 度 (能量等效量级)")
-        print("-" * 40)
+        # print(f"[方法 3] 能量积分法 (Arias Intensity - Ia):")
+        # print(f"   阿里亚斯烈度:   {arias_intensity:.4f} m/s")
+        # print(f"   >>> 评估烈度: {intensity_m3} 度 (能量等效量级)")
+        # print("-" * 40)
         
-        print(f"[方法 4] 有效设计加速度 (Effective Acceleration):")
+        print(f"[方法 3] 有效设计加速度 (Effective Acceleration):")
         print(f"   有效加速度:     {effective_pga:.2f} mm/s^2 ({effective_pga/10.0:.2f} Gal)")
         print(f"   >>> 评估烈度: {intensity_m4} 度 (结构设计实际感受)")
         

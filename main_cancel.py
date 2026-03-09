@@ -18,6 +18,10 @@ import os
 import sys
 import argparse
 import numpy as np
+import json
+
+# 解决 OpenMP 运行时冲突 (OMP: Error #15)
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 # Setup path for co-tracker
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker"))
@@ -30,6 +34,7 @@ from core.analyzer import Analyzer
 from core.cancel_analyzer import CancelAnalyzer
 from utils.video_io import read_frames
 from utils.visualizer import visualize_tracks
+from utils.self_calibration import SelfCalibration
 
 INPUT_DIR = "input_videos"
 DEFAULT_VIDEO = "sample.mp4"
@@ -87,6 +92,33 @@ def main():
     T, H, W = frames.shape[0], frames.shape[1], frames.shape[2]
     print(f"Frames: T={T}, HxW={W}x{H}, fps={fps}")
 
+    # 3.a Attempt to load self-calibration parameters and apply to frames
+    calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
+    if os.path.exists(calib_path):
+        try:
+            with open(calib_path, 'r', encoding='utf-8') as f:
+                calib = json.load(f)
+            print(f"Found distortion params: {calib_path}. Applying correction...")
+            calib_obj = SelfCalibration()
+            calib_obj.k3 = float(calib.get('k3', 0.0))
+            calib_obj.k5 = float(calib.get('k5', 0.0))
+            cx = float(calib.get('cx', W/2.0))
+            cy = float(calib.get('cy', H/2.0))
+            calib_obj.center = (cx, cy)
+
+            # Apply correction to each frame (may be slow for long videos)
+            corrected_frames = []
+            print('Applying distortion correction to all frames (this may take a while)...')
+            for i in range(frames.shape[0]):
+                corrected = calib_obj.apply_to_image(frames[i])
+                corrected_frames.append(corrected)
+            frames = np.stack(corrected_frames, axis=0)
+            print('Distortion correction applied to frames.')
+        except Exception as e:
+            print(f"Warning: Failed to load/apply distortion params: {e}")
+    else:
+        print(f"No distortion params file found at {calib_path}. Skipping auto-correction.")
+
     # 4. ROI Selection (Target + Reference)
     # We use a specific suffix for cancellation ROIs to avoid conflict with standard surface ROIs
     ROI_SUFFIX = "_cancel_rois.json"
@@ -125,6 +157,25 @@ def main():
                 sys.exit(1)
             rois = rois[:2]
 
+    # ---------------------------------------------------------
+    # ENGINEERED CALIBRATION SETUP (Sample.mp4 Specific)
+    # ---------------------------------------------------------
+    if base_name == "sample":
+        print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
+        # Source Pixels (Extracted manually)
+        src_calib = [
+            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
+        ]
+        
+        # Destination Physical Coordinates (mm)
+        dst_calib = [
+            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+        ]
+        
+        analyzer.setup_calibration(src_calib, dst_calib)
+    else:
+        print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
+
     # 5. Point Detection
     # Detect independently to know which is which
     print("Detecting points...")
@@ -157,17 +208,14 @@ def main():
     tracks_ref = tracks[num_target:]
     
     # Calculate Reference Motion (Camera Motion)
-    # Ref shift at time t = Ref(t) - Ref(0)
-    # tracks_ref shape: (N_ref, T, 2)
-    # We need robust mean of shifts
-    
-    ref_initial = tracks_ref[:, 0:1, :] # (N_ref, 1, 2)
+    # 改进：取前几帧的均值作为参考原点，避免第一帧单帧跳变影响全局
+    ref_initial = np.nanmean(tracks_ref[:, :3, :], axis=1, keepdims=True) 
     ref_shifts = tracks_ref - ref_initial # (N_ref, T, 2)
     
     # Average over all reference points, ignoring NaNs
-    # Note: track_video output might contain NaNs if point is lost? 
-    # CoTracker usually keeps predicting, but let's be safe.
     avg_camera_shift = np.nanmean(ref_shifts, axis=0) # (T, 2)
+    # 强制将均值漂移归零，确保抵消只处理动态抖动
+    avg_camera_shift -= np.nanmean(avg_camera_shift, axis=0) 
     
     # Fill any NaNs in camera shift (if all ref points lost) with 0 or previous
     # Simple forward fill for now
@@ -190,32 +238,64 @@ def main():
     # Save RAW tracks (for debugging / comparison)
     print("Saving RAW results...")
     analyzer.save_tracks(f"{base_name}_raw", tracks_target, fps)
+
+    # Save REFERENCE tracks (The cancellation/reference box)
+    print("Saving REFERENCE results...")
+    ref_track_path, _ = analyzer.save_tracks(f"{base_name}_reference", tracks_ref, fps)
+    print(f"Saved reference tracks to {ref_track_path}")
     
     # Save CORRECTED tracks (Main Result)
     print("Saving CORRECTED results...")
     npz_path, csv_path = analyzer.save_tracks(f"{base_name}_corrected", corrected_tracks, fps)
     print(f"Saved corrected tracks to {npz_path}")
 
-    # Generate Comparison Plot
-    print("Generating cancellation comparison chart...")
-    plot_path = c_analyzer.plot_comparison(base_name, tracks_target, corrected_tracks, fps)
-    print(f"Saved cancellation analysis to {plot_path}")
+    # Generate Triple Comparison Plot
+    print("Generating cancellation comparison chart (Triple Curves)...")
+    plot_path = c_analyzer.plot_comparison(base_name, tracks_target, tracks_ref, corrected_tracks, fps)
+    print(f"Saved triple cancellation analysis to {plot_path}")
 
     # Visualize (We visualize the RAW tracking to show *what* was tracked, 
     # but we might want to indicate which were target vs ref)
     # We can visualize all tracks.
     vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
-    visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    # Use the side-by-side visualizer: left = video with tracks, right = time/displacement plot
+    from utils.visualizer import visualize_tracks_with_plot
+    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
     
     # Compute Waveform on CORRECTED data
     wave_path = analyzer.compute_and_save_waveform(f"{base_name}_corrected", corrected_tracks, fps)
     print(f"Saved Corrected Waveform to {wave_path}")
+
+    # Compute Waveform on REFERENCE data (Camera/Reference Motion)
+    ref_wave_path = analyzer.compute_and_save_waveform(f"{base_name}_reference", tracks_ref, fps)
+    print(f"Saved Reference Waveform to {ref_wave_path}")
     
+    # ---------------------------------------------------------
+    # NEW: Advanced Analysis on Corrected Tracks
+    # ---------------------------------------------------------
+    print("\n--- Performing Advanced Analysis on Corrected Tracks ---")
+    
+    # 1. Plot Side-by-Side X/Y Waveforms for Corrected Tracks
+    double_wave_path = analyzer.compute_and_save_double_waveforms(f"{base_name}_corrected", corrected_tracks, fps)
+    print(f"Saved Double Waveform Plot (Corrected) to {double_wave_path}")
+
+    # 2. Compute and save Spectrum (FFT) for Corrected Tracks
+    spec_path = analyzer.compute_and_save_spectrum(f"{base_name}_corrected", corrected_tracks, fps)
+    print(f"Saved Frequency Spectrum (Corrected) to {spec_path}")
+
+    # 3. Calculate Multi-Dimensional Seismic Intensity for Corrected Tracks
+    # Note: If base_name=='sample', it uses Homography, else linear fallback
+    intensity_results = analyzer.calculate_intensity(corrected_tracks, fps)
+    print(f"Intensity Analysis Complete for {base_name}.")
+
     # Optional: Save reference motion itself
     ref_path = os.path.join(out_dir, f"{base_name}_camera_motion.csv")
     np.savetxt(ref_path, avg_camera_shift, delimiter=",", header="dx,dy", comments="")
     print(f"Saved estimated camera motion to {ref_path}")
+
+    print("\n[TIP] For advanced analysis (Intensity, Spectrum, etc.), run:")
+    print(f"python analyze_results.py {npz_path}")
 
 if __name__ == "__main__":
     main()
