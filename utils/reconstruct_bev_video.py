@@ -7,8 +7,8 @@ Birds-Eye View Track Visualizer
 
 输入要求：
 -----------
-1. 鸟瞰图背景：output\calibration_debug\sample_birds_eye_view.jpg
-2. 追踪数据：output\sample_output_surface\sample_surface_tracks.npz
+1. 鸟瞰图背景：output\\calibration_debug\\sample_birds_eye_view.jpg
+2. 追踪数据：output\\sample_output_surface\\sample_surface_tracks.npz
 
 使用方法：
 -----------

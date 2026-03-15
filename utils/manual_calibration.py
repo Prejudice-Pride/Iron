@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import os
-from utils.self_calibration import SelfCalibration
+from self_calibration import SelfCalibration
 
 def manual_tune(video_path):
     """
@@ -61,18 +61,18 @@ def manual_tune(video_path):
         # 3. 执行校正
         corrected = calibrator.apply_to_image(frame)
         
-        # 4. 绘制参考网格线
-        h, w = corrected.shape[:2]
-        # 绘制垂直参考线
-        for x in range(0, w, 100):
-            cv2.line(corrected, (x, 0), (x, h), (0, 0, 255), 1)
-        # 绘制水平参考线
-        for y in range(0, h, 100):
-            cv2.line(corrected, (0, y), (w, y), (0, 0, 255), 1)
+        # # 4. 绘制参考网格线
+        # h, w = corrected.shape[:2]
+        # # 绘制垂直参考线
+        # for x in range(0, w, 100):
+        #     cv2.line(corrected, (x, 0), (x, h), (0, 0, 255), 1)
+        # # 绘制水平参考线
+        # for y in range(0, h, 100):
+        #     cv2.line(corrected, (0, y), (w, y), (0, 0, 255), 1)
             
-        # 叠加参数文字
-        info = f"K3: {k3_val:.2e}, K5: {k5_val:.2e}, Center: ({cx}, {cy})"
-        cv2.putText(corrected, info, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        # # 叠加参数文字
+        # info = f"K3: {k3_val:.2e}, K5: {k5_val:.2e}, Center: ({cx}, {cy})"
+        # cv2.putText(corrected, info, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
         cv2.imshow('Corrected Result', corrected)
         
@@ -92,5 +92,5 @@ def manual_tune(video_path):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    default_video = "input_videos/sample.mp4"
+    default_video = "C:/Users/Administrator/Desktop/Princess/TheForge/Iron/input_videos/sample.mp4"
     manual_tune(default_video)

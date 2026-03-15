@@ -1,7 +1,12 @@
 import os
+import sys
 import cv2
 import numpy as np
 import argparse
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from core.analyzer import Analyzer
 from utils.video_io import read_frames
 
@@ -68,7 +73,7 @@ def main():
     max_x, max_y = np.max(dst_np, axis=0)
     
     # 构建可视化画布 (800x800) 的缩放矩阵
-    target_w, target_h = 800, 800
+    target_w, target_h = 1980, 1080
     scale_x = target_w / (max_x - min_x + 1000)
     scale_y = target_h / (max_y - min_y + 1000)
     S = np.array([

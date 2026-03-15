@@ -39,7 +39,7 @@ from utils.video_io import read_frames
 from utils.visualizer import visualize_tracks
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample.mp4"
+DEFAULT_VIDEO = "sample(protected).mp4"
 OUTPUT_DIR = "output"
 DEFAULT_POINTS = os.path.join("corner_points", "sample_corners.json")
 
