@@ -253,10 +253,10 @@ def select_lines_from_media(media_path):
 
 def main():
     image_path = "input_videos\sample.mp4"
-    points = select_coords_from_media(image_path)
-    # boxes = select_boxes_from_media(image_path)
+    # points = select_coords_from_media(image_path)
+    boxes = select_boxes_from_media(image_path)
     # lines = select_lines_from_media(image_path)
-    print("All selected boxes:", points)
+    print("All selected boxes:", boxes)
 
 if __name__ == '__main__':
     main()

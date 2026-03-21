@@ -13,6 +13,7 @@ python main_lk.py [video_file] [output_dir]
 import os
 import sys
 import argparse
+import numpy as np
 
 from core.lk_engine import LKTrackingEngine
 from core.sampler import Sampler
@@ -25,7 +26,7 @@ DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
-MAX_POINTS = 500
+MAX_POINTS = 10  # 最佳 10 个点，可根据需要适当调整
 
 def main():
     parser = argparse.ArgumentParser(description="Seismic LK Optical Flow Tracker")
@@ -66,17 +67,25 @@ def main():
     T, H, W = frames.shape[0], frames.shape[1], frames.shape[2]
     print(f"Frames: T={T}, HxW={W}x{H}, fps={fps}")
     
-    # 4. ROI & Point Detection
-    rois, roi_path = sampler.load_rois(base_name)
-    if rois is None:
-        print("No ROI file found. Switching to interactive selection...")
-        rois = sampler.select_rois_interactive(frames[0])
-        if rois and len(rois) > 0:
-            sampler.save_rois(roi_path, rois)
-        else:
-            print("No ROIs selected. Using full image.")
-    
-    points = sampler.detect_roi_points(frames[0], rois, max_points=MAX_POINTS)
+    # 4. Point Detection
+    points, points_path = sampler.load_points(base_name)
+    if points is not None:
+        print(f"Loaded {len(points)} points from {points_path}")
+        rois = None  # No ROIs needed for point sampling
+    else:
+        print("No points file found. Falling back to ROI-based detection...")
+        # ROI & Point Detection
+        rois, roi_path = sampler.load_rois(base_name)
+        if rois is None:
+            print("No ROI file found. Switching to interactive selection...")
+            rois = sampler.select_rois_interactive(frames[0])
+            if rois and len(rois) > 0:
+                sampler.save_rois(roi_path, rois)
+            else:
+                print("No ROIs selected. Using full image.")
+                rois = None
+        
+        points = sampler.detect_roi_points(frames[0], rois, max_points=MAX_POINTS)
     if points.shape[0] == 0:
         print("No points detected. Exiting.")
         sys.exit(1)
@@ -88,14 +97,15 @@ def main():
     print(f"LK tracking complete. Shape: {tracks.shape}")
     
     # 6. Analyze & Visualize
-    npz_path, csv_path = analyzer.save_tracks(base_name + "_lk", tracks, fps)
+    npz_path, csv_path = analyzer.save_tracks(f"{base_name}_lk", tracks, fps)
     print(f"Saved LK tracks to {npz_path}")
     
     vis_path = os.path.join(out_dir, f"tracked_lk_{base_name}.mp4")
-    visualize_tracks(frames, tracks, vis_path, fps, rois=rois)
+    visibilities = ~np.isnan(tracks[:, :, 0])
+    visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
     
-    wave_path = analyzer.compute_and_save_waveform(base_name + "_lk", tracks, fps)
+    wave_path = analyzer.compute_and_save_waveform(f"{base_name}_lk", tracks, fps)
     print(f"Saved LK Average Waveform to {wave_path}")
 
 if __name__ == "__main__":

@@ -2,14 +2,18 @@ import cv2
 import numpy as np
 
 class LKTrackingEngine:
-    def __init__(self, win_size=(15, 15), max_level=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03)):
+    def __init__(self, win_size=(21, 21), max_level=3, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01)):
         """
         Initialize Lucas-Kanade Optical Flow Engine.
+        - win_size: Extended to (21,21) for more stable local feature matching.
+        - max_level: Increased to 3 (4 pyramid levels) for better large-scale motion.
+        - criteria: Increased iterations and narrowed epsilon for sub-pixel refinement.
         """
         self.lk_params = dict(
             winSize=win_size,
             maxLevel=max_level,
-            criteria=criteria
+            criteria=criteria,
+            minEigThreshold=1e-4  # Additional filter for weak features
         )
 
     def track_video(self, frames, points):

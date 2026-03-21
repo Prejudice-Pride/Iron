@@ -12,7 +12,7 @@ from utils.video_io import read_frames
 
 def main():
     parser = argparse.ArgumentParser(description="Homography Calibration Debugger")
-    parser.add_argument("video", nargs="?", default="input_videos/sample.mp4", help="Video path")
+    parser.add_argument("video", nargs="?", default="../input_videos/sample.mp4", help="Video path")
     args = parser.parse_args()
 
     # 1. 加载第一帧
@@ -29,15 +29,35 @@ def main():
     # -------------------------------------------------------------
     # src_pts: 视频画面中的像素 [x, y]
     # [[297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [1433, 542], [888, 596]]
+    
+    # 2026/3/21 新增:
+    # src_pts = [
+    # [1002, 544],
+    # [1375, 620],
+    # [1155, 925],
+    # [608, 717],]
+    
     src_pts = [
-        [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
-    ]
+    [1002, 544],
+    [1375, 620],
+    [1155, 925],
+    [608, 717],]
     
     # dst_pts: 对应的物理空间坐标 [x_mm, y_mm]
     # [[0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240], [0, 1500], [8800, 3300]]
+    
+    # 2026/3/21 新增：
+    # dst_pts = [
+    # [0, 0],
+    # [880, 0],
+    # [0, 150],
+    # [880, 150],]
+    
     dst_pts = [
-        [0, 0], [150, 0], [150, 600], [8800, 600], [8800, 1500], [8650, 1500], [8800, 2400]
-    ]
+    [0, 0],
+    [880, 0],
+    [880, 150],
+    [0, 150],]
 
     print(f"\n[Step 1] Initializing Calibration for: {base_name}")
     analyzer = Analyzer(output_dir="output/calibration_debug")

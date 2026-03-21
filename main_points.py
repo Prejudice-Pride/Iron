@@ -27,6 +27,9 @@ import argparse
 import json
 import numpy as np
 
+# 解决 OpenMP 运行时冲突 (OMP: Error #15)
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
 # Setup path for co-tracker
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker"))
 if REPO_DIR not in sys.path and os.path.exists(REPO_DIR):

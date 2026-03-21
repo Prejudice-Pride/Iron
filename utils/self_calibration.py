@@ -5,9 +5,11 @@ import os
 import json
 
 class SelfCalibration:
-    def __init__(self, k3=0.0, k5=0.0):
+    def __init__(self, k3=0.0, k5=0.0, p1=0.0, p2=0.0):
         self.k3 = k3
         self.k5 = k5
+        self.p1 = p1
+        self.p2 = p2
         self.center = None
 
     def extract_curves(self, image, min_length=150, debug_folder=None, frame_idx=0):
@@ -45,20 +47,25 @@ class SelfCalibration:
         
         return curves
 
-    def undistort_points(self, points, k3, k5, center):
+    def undistort_points(self, points, k3, k5, p1, p2, center):
         """
-        应用径向畸变模型进行校正
-        xu = xd + xd * (k3 * rd^2 + k5 * rd^4)
-        yu = yd + yd * (k3 * rd^2 + k5 * rd^4)
+        应用径向和切向畸变模型进行校正
         """
         xd = points[:, 0] - center[0]
         yd = points[:, 1] - center[1]
         rd2 = xd**2 + yd**2
         rd4 = rd2**2
         
-        distortion = 1.0 - (k3 * rd2 + k5 * rd4) # 将 + 改为 -
-        xu = xd * distortion + center[0]
-        yu = yd * distortion + center[1]
+        # 径向畸变
+        distortion = 1.0 - (k3 * rd2 + k5 * rd4)
+        
+        # 切向畸变
+        # 减去切向畸变项，保持与径向畸变负号一致的逆向映射逻辑
+        dx_tangential = -(2 * p1 * xd * yd + p2 * (rd2 + 2 * xd**2))
+        dy_tangential = -(p1 * (rd2 + 2 * yd**2) + 2 * p2 * xd * yd)
+        
+        xu = xd * distortion + dx_tangential + center[0]
+        yu = yd * distortion + dy_tangential + center[1]
         
         return np.stack([xu, yu], axis=1)
 
@@ -66,12 +73,12 @@ class SelfCalibration:
         """
         目标函数：最小化校正后点到拟合直线的残差平方和
         """
-        k3, k5 = params
+        k3, k5, p1, p2 = params
         all_residuals = []
         
         for curve in curves:
             # 校正曲线
-            undistorted_curve = self.undistort_points(curve, k3, k5, center)
+            undistorted_curve = self.undistort_points(curve, k3, k5, p1, p2, center)
             
             # 使用最小二乘法拟合直线
             line_params = cv2.fitLine(undistorted_curve, cv2.DIST_L2, 0, 0.01, 0.01)
@@ -87,22 +94,56 @@ class SelfCalibration:
 
     def estimate_params(self, curves, img_shape):
         """
-        基于提取的长直线集合估计 k3 和 k5
+        基于提取的长直线集合估计 k3, k5, p1, p2
         """
         self.center = (img_shape[1] / 2.0, img_shape[0] / 2.0)
-        initial_guess = [0.0, 0.0]
+        initial_guess = [0.0, 0.0, 0.0, 0.0]
         
         # 限制搜索范围，防止出现极端扭曲
         res = least_squares(
             self.objective_function, 
             initial_guess, 
             args=(curves, self.center),
-            bounds=([-1e-6, -1e-12], [1e-6, 1e-12]),
+            bounds=([-1e-6, -1e-12, -1e-5, -1e-5], [1e-6, 1e-12, 1e-5, 1e-5]),
             ftol=1e-8
         )
         
-        self.k3, self.k5 = res.x
-        return self.k3, self.k5
+        self.k3, self.k5, self.p1, self.p2 = res.x
+        return self.k3, self.k5, self.p1, self.p2
+
+    def evaluate_straightness(self, image, min_length=150):
+        """
+        评估图像的直线度（Straightness Error）
+        返回：所有提取长直线中，像素点到各自拟合理想直线的平均距离（单位：像素）
+        """
+        curves = self.extract_curves(image, min_length=min_length)
+        if not curves:
+            return 0.0
+
+        total_error = 0.0
+        total_points = 0
+
+        for curve in curves:
+            # line_params = [vx, vy, x0, y0]
+            line_params = cv2.fitLine(curve, cv2.DIST_L2, 0, 0.01, 0.01)
+            vx, vy, x0, y0 = line_params.flatten()
+            
+            x = curve[:, 0]
+            y = curve[:, 1]
+            
+            # 使用向量叉乘的面积形式计算点到直线距离: 
+            # 距离 = |(x-x0)*vy - (y-y0)*vx| / sqrt(vx^2 + vy^2)
+            # 因为 fitLine 返回的是单位方向向量，所以 sqrt(vx^2 + vy^2) 约等于 1
+            distances = np.abs((x - x0) * vy - (y - y0) * vx)
+            
+            total_error += np.sum(distances)
+            total_points += len(curve)
+            
+        if total_points == 0:
+            return 0.0
+            
+        mean_error = total_error / total_points
+        return mean_error
 
     def apply_to_image(self, image):
         """
@@ -120,7 +161,7 @@ class SelfCalibration:
             self.center = (w / 2.0, h / 2.0)
             
         # 计算校正后的坐标 (xu, yu)
-        undistorted = self.undistort_points(coords, self.k3, self.k5, self.center)
+        undistorted = self.undistort_points(coords, self.k3, self.k5, self.p1, self.p2, self.center)
         
         ux = undistorted[:, 0]
         uy = undistorted[:, 1]
@@ -146,6 +187,8 @@ class SelfCalibration:
         data = {
             "k3": float(self.k3),
             "k5": float(self.k5),
+            "p1": float(self.p1),
+            "p2": float(self.p2),
             "cx": float(self.center[0]),
             "cy": float(self.center[1])
         }
@@ -181,8 +224,8 @@ def run_self_calibration(video_path, output_dir="output/calibration_debug"):
     
     # 3. 参数分析
     print(f"正在反演畸变参数...")
-    k3, k5 = calibrator.estimate_params(all_curves, frames[0].shape)
-    print(f"\nK3: {k3:.8e}, K5: {k5:.8e}, Center: {calibrator.center}")
+    k3, k5, p1, p2 = calibrator.estimate_params(all_curves, frames[0].shape)
+    print(f"\nK3: {k3:.8e}, K5: {k5:.8e}, P1: {p1:.8e}, P2: {p2:.8e}, Center: {calibrator.center}")
     
     # 4. 预览
     calibrator.save_results(output_dir)

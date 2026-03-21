@@ -35,6 +35,7 @@ from core.cancel_analyzer import CancelAnalyzer
 from utils.video_io import read_frames
 from utils.visualizer import visualize_tracks
 from utils.self_calibration import SelfCalibration
+from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
 DEFAULT_VIDEO = "sample.mp4"
@@ -119,6 +120,11 @@ def main():
     else:
         print(f"No distortion params file found at {calib_path}. Skipping auto-correction.")
 
+    # 3.b 图像增强滤波
+    print("\n--- Applying Image Enhancement ---")
+    # 这里默认启用 CLAHE 局部对比度增强，这有助于更稳定地检测弱纹理表面的角点
+    frames = enhance_frames(frames, use_clahe=True, use_bilateral=False)
+
     # 4. ROI Selection (Target + Reference)
     # We use a specific suffix for cancellation ROIs to avoid conflict with standard surface ROIs
     ROI_SUFFIX = "_cancel_rois.json"
@@ -163,16 +169,19 @@ def main():
     if base_name == "sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
-        src_calib = [
-            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
-        ]
+        src_pts = [
+        [1002, 544],
+        [1375, 620],
+        [1155, 925],
+        [608, 717],]
         
-        # Destination Physical Coordinates (mm)
-        dst_calib = [
-            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
-        ]
+        dst_pts = [
+        [0, 0],
+        [880, 0],
+        [880, 150],
+        [0, 150],]
         
-        analyzer.setup_calibration(src_calib, dst_calib)
+        analyzer.setup_calibration(src_pts, dst_pts)
     else:
         print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
 
@@ -258,9 +267,8 @@ def main():
     # but we might want to indicate which were target vs ref)
     # We can visualize all tracks.
     vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
-    # Use the side-by-side visualizer: left = video with tracks, right = time/displacement plot
-    from utils.visualizer import visualize_tracks_with_plot
-    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    # 更改为基础可视化，移除侧边栏实时波形图
+    visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
     
     # Compute Waveform on CORRECTED data
