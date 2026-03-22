@@ -6,14 +6,14 @@ from self_calibration import SelfCalibration
 
 def manual_tune(video_path):
     """
-    交互式滑块调参工�?
-    使用方法�?
-    1. 拖动 K3 �?K5 滑块观察图像变化
-    2. 红色垂直参考线可以帮助你判断直线是否校正成�?
-    3. 调整满意后，�?'ESC' 键退出并打印最终参�?
+    交互式滑块调
+    使用方法
+    1. 拖动 K3 K5 滑块观察图像变化
+    2. 红色垂直参考线可以帮助你判断直线是否校正成功?
+    3. 调整满意后，'ESC' 键退出并打印最终参数?
     """
     if not os.path.exists(video_path):
-        print(f"错误: 找不到视频文�?{video_path}")
+        print(f"错误: 找不到视频文件?{video_path}")
         return
 
     cap = cv2.VideoCapture(video_path)
@@ -24,14 +24,14 @@ def manual_tune(video_path):
         print("错误: 无法读取视频帧")
         return
     
-    # 创建两个独立的窗口：一个用于调节控制，一个用于显示视频结�?
+    # 创建两个独立的窗口：一个用于调节控制，一个用于显示视频结果?
     cv2.namedWindow('Control Panel', cv2.WINDOW_NORMAL)
     cv2.resizeWindow('Control Panel', 400, 300)
     
     cv2.namedWindow('Corrected Result', cv2.WINDOW_NORMAL)
     cv2.resizeWindow('Corrected Result', 1280, 720)
     
-    # �?'Control Panel' 窗口创建滑动�?
+    # ?'Control Panel' 窗口创建滑动?
     cv2.createTrackbar('K3 (offset 1000, scale 1e-9)', 'Control Panel', 1000, 2000, lambda x: None)
     cv2.createTrackbar('K5 (offset 1000, scale 1e-15)', 'Control Panel', 1000, 2000, lambda x: None)
     cv2.createTrackbar('P1 (offset 1000, scale 1e-7)', 'Control Panel', 1000, 2000, lambda x: None)
@@ -51,7 +51,7 @@ def manual_tune(video_path):
     straightness_error = 0.0
 
     while True:
-        # 1. �?'Control Panel' 窗口获取滑块�?
+        # 1. ?'Control Panel' 窗口获取滑块?
         k3_raw = cv2.getTrackbarPos('K3 (offset 1000, scale 1e-9)', 'Control Panel')
         k5_raw = cv2.getTrackbarPos('K5 (offset 1000, scale 1e-15)', 'Control Panel')
         p1_raw = cv2.getTrackbarPos('P1 (offset 1000, scale 1e-7)', 'Control Panel')
@@ -128,8 +128,8 @@ def manual_tune(video_path):
             
             cv2.imwrite(orig_path, frame)
             cv2.imwrite(corr_path, corrected)
-            print(f"已保存原始图�? {orig_path}")
-            print(f"已保存校正图�? {corr_path}")
+            print(f"已保存原始图 {orig_path}")
+            print(f"已保存校正图 {corr_path}")
             
             # 调用原本的保存逻辑
             calibrator.save_results(save_dir)
@@ -138,5 +138,5 @@ def manual_tune(video_path):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    default_video = "C:/Users/Administrator/Desktop/Princess/TheForge/Iron/input_videos/sample.mp4"
+    default_video = "C:/Users/Administrator/Desktop/Princess/TheForge/Iron/input_videos/sample4.mp4"
     manual_tune(default_video)

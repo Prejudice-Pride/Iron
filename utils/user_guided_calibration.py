@@ -224,7 +224,7 @@ def run_user_guided_calibration(video_path):
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
-    video = "input_videos/sample2.mp4"
+    video = "input_videos/sample.mp4"
     if len(sys.argv) > 1:
         video = sys.argv[1]
     
