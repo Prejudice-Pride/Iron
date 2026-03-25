@@ -1,7 +1,7 @@
 import ffmpeg
 
-input_file = "input_videos\ss.ts"
-output_file = "input_videos\saa.mp4"
+input_file = "..\input_videos\\4.ts"
+output_file = "..\input_videos\\4.mp4"
 
 (
     ffmpeg

@@ -6,6 +6,14 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import io
 
+import time
+from datetime import datetime
+
+# 打印当前时间节点
+def print_timestamp(message):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    print(f"[{timestamp}] {message}")
+
 def visualize_tracks(frames, tracks, visibilities, out_path, fps, rois=None):
     """
     Visualizes tracking results by drawing points and trails on video frames.
@@ -187,9 +195,17 @@ def visualize_tracks_with_plot(frames, tracks, visibilities, out_path, fps, rois
         out_frames.append(combined)
         plt.close(fig)
 
+
     # Save video
     # Use imageio v3 with imopen to avoid huge np.array allocations and potential OS pipe errors
     import imageio.v3 as iio_v3
+    
+    # 使用示例
+    print_timestamp("开始处理")
+    
     with iio_v3.imopen(out_path, "w", plugin="FFMPEG") as file:
-        file.write(np.stack(out_frames), fps=fps, macro_block_size=1)
+        file.write(np.stack(out_frames), fps=fps, macro_block_size=1,output_params=['-c:v', 'h264_nvenc', '-preset', 'p4'])
+    print_timestamp("处理结束")
     return out_path
+
+    

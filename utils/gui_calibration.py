@@ -6,8 +6,6 @@ import argparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.video_io import read_frames
-from utils.self_calibration import SelfCalibration
-import json
 
 # ---------------------------------------------------------
 # 全局状态变量
@@ -28,7 +26,7 @@ def draw_overlay():
     for i, pt in enumerate(points):
         color = (0, 0, 255) if i == dragging_idx else (0, 255, 255)
         cv2.circle(img_display, pt, 8, color, -1)
-        cv2.putText(img_display, str(i), (pt[0]+10, pt[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 1)
+        cv2.putText(img_display, str(i), (pt[0]+10, pt[1]-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
         
     return img_display
 
@@ -78,7 +76,7 @@ def main():
     global original_img, points
 
     parser = argparse.ArgumentParser(description="Interactive Homography Calibration")
-    parser.add_argument("video", nargs="?", default="../input_videos/sample.mp4", help="Video path")
+    parser.add_argument("video", nargs="?", default="../input_videos/qample2.mp4", help="Video path")
     args = parser.parse_args()
 
     # 1. 加载第一帧
@@ -95,28 +93,6 @@ def main():
     original_img = cv2.cvtColor(frames[0], cv2.COLOR_RGB2BGR)
     h, w = original_img.shape[:2]
     
-    # --- 新增：仿照 cancel 逻辑，加载畸变校准参数并应用 ---
-    calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
-    if os.path.exists(calib_path):
-        try:
-            with open(calib_path, 'r', encoding='utf-8') as f:
-                calib = json.load(f)
-            print(f"Found distortion params: {calib_path}. Applying correction to first frame...")
-            calib_obj = SelfCalibration()
-            calib_obj.k3 = float(calib.get('k3', 0.0))
-            calib_obj.k5 = float(calib.get('k5', 0.0))
-            cx = float(calib.get('cx', w/2.0))
-            cy = float(calib.get('cy', h/2.0))
-            calib_obj.center = (cx, cy)
-
-            # 对第一帧应用畸变矫正
-            original_img = calib_obj.apply_to_image(original_img)
-            print('Distortion correction applied to the first frame for calibration.')
-        except Exception as e:
-            print(f"Warning: Failed to load/apply distortion params: {e}")
-    else:
-        print(f"No distortion params file found at {calib_path}. Using raw frame.")
-
     # 初始化 4 个控制点（在画面中间画个大矩形）
     margin = 200
     points = [

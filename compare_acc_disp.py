@@ -9,9 +9,30 @@ from scipy.stats import wasserstein_distance
 from scipy.spatial.distance import euclidean, cosine
 
 # ================= Configuration =================
-SEISMIC_TXT_PATH = r"txt_home/ID210711_room_trimed206.txt"
-# Assuming we want to compare with the corrected cancellation outputs:
-VISUAL_CSV_PATH = r"output/sample_output_cancel/sample_corrected_surface_waveform.csv"
+
+# qample.mp4
+# SEISMIC_TXT_PATH = r"txt_home/qample_trimed206b.txt"
+# VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
+
+# qample2.mp4
+SEISMIC_TXT_PATH = r"txt_home/qample2_trimed910.txt"
+VISUAL_CSV_PATH = r"output/qample2_output_cancel/qample2_corrected_surface_waveform.csv"
+
+# Axis Mapping (Camera's perspective vs Seismometer)
+# Camera visual axes mapped to Seismograph axes.
+# Options: 'NS' (North-South), 'SN' (South-North, -NS), 'EW' (East-West), 'WE' (West-East, -EW)
+
+# Default
+VISUAL_X_MAPS_TO = 'NS'
+VISUAL_Y_MAPS_TO = 'EW'
+
+# qample.mp4
+VISUAL_X_MAPS_TO = 'NS'
+VISUAL_Y_MAPS_TO = 'WE'
+
+# qample2.mp4
+VISUAL_X_MAPS_TO = 'SN'
+VISUAL_Y_MAPS_TO = 'EW'
 
 # Seismometer specs
 SEISMIC_FS = 100.0                   # 100 Hz
@@ -136,10 +157,19 @@ def main():
         print(f"Error loading TXT: {e}")
         return
 
-    # User mappings: EW -> Y-axis, NS -> X-axis
+    # Helper function to extract and invert axes if strictly needed
+    def get_mapped_acc(df, mapping):
+        mapping = mapping.upper()
+        if mapping == 'NS': return df['NS'].values
+        elif mapping == 'SN': return -df['NS'].values
+        elif mapping == 'EW': return df['EW'].values
+        elif mapping == 'WE': return -df['EW'].values
+        else: raise ValueError(f"Unknown axis mapping: {mapping}. Must be one of NS, SN, EW, WE.")
+
+    # User mappings: visual x/y -> seismometer axes
     # Unit: g -> mm/s^2
-    acc_y = seis_df['EW'].values * G_TO_MM
-    acc_x = seis_df['NS'].values * G_TO_MM
+    acc_x = get_mapped_acc(seis_df, VISUAL_X_MAPS_TO) * G_TO_MM
+    acc_y = get_mapped_acc(seis_df, VISUAL_Y_MAPS_TO) * G_TO_MM
 
     print("2. Integrating Acceleration to Displacement...")
     disp_seis_y = double_integrate(acc_y, SEISMIC_DT, HP_CUTOFF, SEISMIC_FS)
@@ -186,7 +216,7 @@ def main():
 
     print("\n" + "="*50)
     print(f"--- 📊 EVALUATION METRICS (对标论文 4.1 & 4.2) ---")
-    print(f"X-Axis (Visual) vs NS (Seismometer):")
+    print(f"X-Axis (Visual) vs {VISUAL_X_MAPS_TO} (Seismometer):")
     print(f"  [1] 时域对齐波形对比 (4.1 手动追踪对标)")
     print(f"  - Peak Time Alignment Shift: {shift_x * SEISMIC_DT:.3f} seconds")
     print(f"  - Pearson Correlation (r):   {r_x:.4f}  (1.0 is perfect)")
@@ -204,7 +234,7 @@ def main():
     print(f"  - Frequency Error:           {f_err_x:.2f} %")
     print("-" * 50)
     
-    print(f"Y-Axis (Visual) vs EW (Seismometer):")
+    print(f"Y-Axis (Visual) vs {VISUAL_Y_MAPS_TO} (Seismometer):")
     print(f"  [1] 时域对齐波形对比 (4.1 手动追踪对标)")
     print(f"  - Peak Time Alignment Shift: {shift_y * SEISMIC_DT:.3f} seconds")
     print(f"  - Pearson Correlation (r):   {r_y:.4f}  (1.0 is perfect)")
@@ -232,8 +262,8 @@ def main():
 
     # Plot 1: X-Axis Time Domain
     plt.subplot(4, 1, 1)
-    plt.title(f"X-Axis Time Domain (Visual vs Seismometer NS) | R: {r_x:.4f}")
-    plt.plot(t_plot_x, ref_x, label="Seismometer NS (GT)", color='black', alpha=0.7)
+    plt.title(f"X-Axis Time Domain (Visual vs Seismometer {VISUAL_X_MAPS_TO}) | R: {r_x:.4f}")
+    plt.plot(t_plot_x, ref_x, label=f"Seismometer {VISUAL_X_MAPS_TO} (GT)", color='black', alpha=0.7)
     plt.plot(t_plot_x, test_x, label="Visual Output X", color='blue', alpha=0.8, linestyle='--')
     plt.ylabel("Z-Score (Disp)")
     plt.legend(loc="upper right")
@@ -241,8 +271,8 @@ def main():
 
     # Plot 2: Y-Axis Time Domain
     plt.subplot(4, 1, 2)
-    plt.title(f"Y-Axis Time Domain (Visual vs Seismometer EW) | R: {r_y:.4f}")
-    plt.plot(t_plot_y, ref_y, label="Seismometer EW (GT)", color='black', alpha=0.7)
+    plt.title(f"Y-Axis Time Domain (Visual vs Seismometer {VISUAL_Y_MAPS_TO}) | R: {r_y:.4f}")
+    plt.plot(t_plot_y, ref_y, label=f"Seismometer {VISUAL_Y_MAPS_TO} (GT)", color='black', alpha=0.7)
     plt.plot(t_plot_y, test_y, label="Visual Output Y", color='red', alpha=0.8, linestyle='--')
     plt.ylabel("Z-Score (Disp)")
     plt.legend(loc="upper right")
@@ -251,7 +281,7 @@ def main():
     # Plot 3: X-Axis Frequency Domain
     plt.subplot(4, 1, 3)
     plt.title(f"X-Axis Frequency Spectrum | Dominant Freq Error: {f_err_x:.2f}%")
-    plt.plot(freq_seis_x, amp_seis_x, label=f"Seis NS ({peak_f_seis_x:.2f}Hz)", color='black', alpha=0.7)
+    plt.plot(freq_seis_x, amp_seis_x, label=f"Seis {VISUAL_X_MAPS_TO} ({peak_f_seis_x:.2f}Hz)", color='black', alpha=0.7)
     plt.plot(freq_vis_x, amp_vis_x, label=f"Visual X ({peak_f_vis_x:.2f}Hz)", color='blue', alpha=0.8)
     plt.xlim(0, 10)  # Usually structural vibrations are < 10Hz
     plt.ylabel("Normalized Amp")
@@ -261,7 +291,7 @@ def main():
     # Plot 4: Y-Axis Frequency Domain
     plt.subplot(4, 1, 4)
     plt.title(f"Y-Axis Frequency Spectrum | Dominant Freq Error: {f_err_y:.2f}%")
-    plt.plot(freq_seis_y, amp_seis_y, label=f"Seis EW ({peak_f_seis_y:.2f}Hz)", color='black', alpha=0.7)
+    plt.plot(freq_seis_y, amp_seis_y, label=f"Seis {VISUAL_Y_MAPS_TO} ({peak_f_seis_y:.2f}Hz)", color='black', alpha=0.7)
     plt.plot(freq_vis_y, amp_vis_y, label=f"Visual Y ({peak_f_vis_y:.2f}Hz)", color='red', alpha=0.8)
     plt.xlim(0, 10)
     plt.xlabel("Frequency (Hz)")

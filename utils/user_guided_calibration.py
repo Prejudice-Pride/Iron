@@ -224,13 +224,13 @@ def run_user_guided_calibration(video_path):
     cv2.destroyAllWindows()
 
 if __name__ == '__main__':
-    video = "input_videos/sample.mp4"
+    video = "input_videos/qample2.mp4"
     if len(sys.argv) > 1:
         video = sys.argv[1]
     
     # 兼容根目录和 utils 目录运行
     if not os.path.exists(video):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = os.path.dirname(os.path.abspath(__file__)) 
         root = os.path.dirname(script_dir)
         fallback = os.path.join(root, video)
         if os.path.exists(fallback):

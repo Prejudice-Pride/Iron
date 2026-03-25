@@ -1,5 +1,42 @@
 import cv2
 import numpy as np
+import os
+import json
+
+
+image_path = "input_videos\qample2.mp4"
+
+try:
+    import sys
+    # Ensure project root is in sys.path to import utils
+    REPODIR = os.path.abspath(os.path.dirname(__file__))
+    if REPODIR not in sys.path:
+        sys.path.insert(0, REPODIR)
+    from utils.self_calibration import SelfCalibration
+except ImportError:
+    SelfCalibration = None
+
+def apply_distortion_correction_if_exists(img):
+    calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
+    if os.path.exists(calib_path) and SelfCalibration is not None:
+        try:
+            with open(calib_path, 'r', encoding='utf-8') as f:
+                calib = json.load(f)
+            print(f"Found distortion params: {calib_path}. Applying correction for selection...")
+            H, W = img.shape[:2]
+            calib_obj = SelfCalibration()
+            calib_obj.k3 = float(calib.get('k3', 0.0))
+            calib_obj.k5 = float(calib.get('k5', 0.0))
+            cx = float(calib.get('cx', W/2.0))
+            cy = float(calib.get('cy', H/2.0))
+            calib_obj.center = (cx, cy)
+            
+            corrected = calib_obj.apply_to_image(img)
+            return corrected
+        except Exception as e:
+            print(f"Warning: Failed to load/apply distortion params: {e}")
+            return img
+    return img
 
 def _interactive_select_coords(img):
     points = []
@@ -203,7 +240,7 @@ def _load_media_first_frame(media_path):
     # 1. Try to read as image
     img = cv2.imread(media_path)
     if img is not None:
-        return img
+        return apply_distortion_correction_if_exists(img)
     
     # 2. Try to read as video
     cap = cv2.VideoCapture(media_path)
@@ -212,7 +249,7 @@ def _load_media_first_frame(media_path):
         cap.release()
         if ret:
             # frame is the first frame
-            return frame
+            return apply_distortion_correction_if_exists(frame)
             
     # If both fail
     raise ValueError(f"Could not open media (image or video): {media_path}")
@@ -252,11 +289,14 @@ def select_lines_from_media(media_path):
 
 
 def main():
-    image_path = "input_videos\sample.mp4"
+    
     # points = select_coords_from_media(image_path)
+    # print("All selected boxes:", points)
+    
     boxes = select_boxes_from_media(image_path)
-    # lines = select_lines_from_media(image_path)
     print("All selected boxes:", boxes)
+    
+    # lines = select_lines_from_media(image_path)
 
 if __name__ == '__main__':
     main()
