@@ -13,8 +13,8 @@ from scipy.spatial.distance import euclidean, cosine
 # VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
 
 # qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\sample206b.txt"
-VISUAL_CSV_PATH = r"output\\032901_sample_output_cancel\sample_corrected_surface_waveform.csv"
+SEISMIC_TXT_PATH = r"txt_home\sample_p1206a.txt"
+VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_corrected_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
 # Camera visual axes mapped to Seismograph axes.
@@ -24,13 +24,17 @@ VISUAL_CSV_PATH = r"output\\032901_sample_output_cancel\sample_corrected_surface
 VISUAL_X_MAPS_TO = 'NS'
 VISUAL_Y_MAPS_TO = 'EW'
 
-# qample.mp4
+# sample.mp4
 VISUAL_X_MAPS_TO = 'NS'
 VISUAL_Y_MAPS_TO = 'WE'
 
-# qample2.mp4
-VISUAL_X_MAPS_TO = 'SN'
-VISUAL_Y_MAPS_TO = 'EW'
+# # qample.mp4
+# VISUAL_X_MAPS_TO = 'NS'
+# VISUAL_Y_MAPS_TO = 'WE'
+
+# # qample2.mp4
+# VISUAL_X_MAPS_TO = 'SN'
+# VISUAL_Y_MAPS_TO = 'EW'
 
 # Seismometer specs
 SEISMIC_FS = 100.0                   # 100 Hz

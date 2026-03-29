@@ -4,7 +4,6 @@ corner_points/
 input_videos/
 output/
 output_videos/
-rois/
 .vscode/
 writing_module/
 old_input_videos/
