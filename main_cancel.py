@@ -38,14 +38,14 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "qample2.mp4"
+DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
 MAX_POINTS_TARGET = 30
 MAX_POINTS_REF = 30 
-CHUNK_LEN = 100
-OVERLAP = 10
+CHUNK_LEN = 150
+OVERLAP = 20
 
 def main():
     parser = argparse.ArgumentParser(description="Seismic Surface Tracker with Reference Cancellation")
@@ -167,6 +167,19 @@ def main():
     # ENGINEERED CALIBRATION SETUP (Sample.mp4 Specific)
     # ---------------------------------------------------------
     if base_name == "sample":
+        print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
+        # Source Pixels (Extracted manually)
+        src_calib = [
+            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
+        ]
+        
+        # Destination Physical Coordinates (mm)
+        dst_calib = [
+            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+        ]
+        
+        analyzer.setup_calibration(src_calib, dst_calib)
+    elif base_name == "old_sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
         src_calib = [
@@ -339,8 +352,24 @@ def main():
     
     # 将计算好的干净趋势，从目标追踪轨迹中减除
     corrected_tracks = tracks_target - avg_camera_shift[None, :, :]
-    
-    print("Cancellation module completed.")
+
+    # --- E. 分段锚点去除漂移 (window anchor-based baseline reset) ---
+    def anchor_segment_detrend(tracks, window_frames=60):
+        # tracks: (N, T, 2)
+        N, T, C = tracks.shape
+        out = tracks.copy()
+        for start in range(0, T, window_frames):
+            end = min(start + window_frames, T)
+            segment = out[:, start:end, :]
+            # 以当前窗口中的点均值（X,Y）作为 anchor，用于去除偏移基线
+            base = np.nanmean(segment.reshape(-1, C), axis=0)  # (2,)
+            if np.isnan(base).any():
+                continue
+            out[:, start:end, :] = segment - base[None, None, :]
+        return out
+
+    corrected_tracks = anchor_segment_detrend(corrected_tracks, window_frames=int(fps*2))
+    print("Cancellation module completed (and anchor-based segment detrend applied).")
 
     # 8. Analyze & Visualize
     

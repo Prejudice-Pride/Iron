@@ -95,131 +95,167 @@ class TrackingEngine:
         q[0, :, 0] = 0
         q[0, :, 1:] = points
 
-        print("Processing video ...")
-        # 使用 torch.from_numpy 效率更高
+        print("Processing video (Memory Optimized FP16) ...")
+        # 优化：通过 half() 使用半精度 FP16，显存占用直接减半
         frames_tensor = (
-            torch.from_numpy(frames).permute(0, 3, 1, 2)[None].float().to(self.device)
+            torch.from_numpy(frames).permute(0, 3, 1, 2)[None].half().to(self.device)
         )
-        queries_tensor = torch.from_numpy(q).float().to(self.device)
+        queries_tensor = torch.from_numpy(q).half().to(self.device)
 
         # 增加 no_grad 节省资源
         with torch.no_grad():
-            pred_tracks, pred_visibilities = self.model(frames_tensor, queries=queries_tensor)
+            # 开启 autocast 以确保模型内部计算的稳定性
+            with torch.cuda.amp.autocast():
+                pred_tracks, pred_visibilities = self.model(frames_tensor, queries=queries_tensor)
 
-        return self._to_pixel_tracks(pred_tracks.cpu().numpy()), \
-               self._to_pixel_visibilities(pred_visibilities.cpu().numpy())
+        return self._to_pixel_tracks(pred_tracks.cpu().float().numpy()), \
+               self._to_pixel_visibilities(pred_visibilities.cpu().float().numpy())
 
-    def track_video_chunked(self, frames, points, chunk_len=40, overlap=10):
+    def track_video_chunked(self, frames, points, chunk_len=100, overlap=10):
         """
-        Run tracking on video in chunks.
-        frames: (T, H, W, 3) numpy array
-        points: (N, 2) initial points
-        Returns: (N, T, 2) tracks
+        Stable chunked tracking with drift-free stitching.
+        frames: (T, H, W, 3)
+        points: (N, 2)
+        Returns: (N, T, 2)
         """
+
         T = len(frames)
         N = points.shape[0]
 
-        # Initial queries
-        # CoTracker expects (1, N, 3) -> t, x, y
+        # 初始化 query（第一帧）
         q = np.zeros((1, N, 3), dtype=np.float32)
         q[0, :, 0] = 0
         q[0, :, 1:] = points
 
         current_queries = torch.from_numpy(q).to(self.device)
 
-        frames_input = frames  # (T, H, W, 3)
         stitched_tracks = None
         stitched_visibilities = None
 
-        print("Processing video in chunks...")
+        print("Processing video in chunks (stable mode)...")
+
         start_frame = 0
 
         while start_frame < T - 1:
-            end_frame = min(start_frame + chunk_len, T)
-            chunk_frames = frames_input[start_frame:end_frame]
 
-            # Prepare tensor: (1, T_chunk, 3, H, W)
+            end_frame = min(start_frame + chunk_len, T)
+            chunk_frames = frames[start_frame:end_frame]
+
             chunk_tensor = (
-                torch.tensor(chunk_frames)
+                torch.from_numpy(chunk_frames)
                 .permute(0, 3, 1, 2)[None]
                 .float()
                 .to(self.device)
             )
 
-            print(f"  Chunk: {start_frame} to {end_frame}")
+            print(f"  Chunk: {start_frame} → {end_frame}")
 
             with torch.no_grad():
                 torch.cuda.empty_cache()
-                # Update time in queries to be relative to the chunk start?
-                # CoTracker offline usually takes queries relative to the video provided.
-                # If we provide a chunk, time 0 is the start of the chunk.
-                if current_queries is not None:
-                    current_queries[:, :, 0] = 0  # Reset time to 0 for the new chunk
 
-                pred_tracks_chunk, pred_visibilities_chunked = self.model(
+                # 每个 chunk 重新设时间起点
+                current_queries[:, :, 0] = 0
+
+                pred_tracks_chunk, pred_vis_chunk = self.model(
                     chunk_tensor, queries=current_queries
                 )
 
-            chunk_tracks_np = pred_tracks_chunk.cpu().numpy()  # (1, T_chunk, N, 2)
-            chunk_visibilities_np = pred_visibilities_chunked.cpu().numpy()  # (1, T_chunk, N)
+            chunk_tracks_np = pred_tracks_chunk.cpu().numpy()      # (1, T_chunk, N, 2)
+            chunk_vis_np = pred_vis_chunk.cpu().numpy()            # (1, T_chunk, N)
 
-            if stitched_tracks is None and stitched_visibilities is None:
-                stitched_tracks = chunk_tracks_np  # (1, T, N, 2)
-                stitched_visibilities = chunk_visibilities_np  # (1, T, N, 2)
+            # --------------------------------------------------
+            # 第一段直接赋值
+            # --------------------------------------------------
+            if stitched_tracks is None:
+                stitched_tracks = chunk_tracks_np
+                stitched_visibilities = chunk_vis_np
+
             else:
+                # overlap长度
                 n_overlap = stitched_tracks.shape[1] - start_frame
+
                 if n_overlap > 0:
-                    # Blend overlap
-                    # overlapping part in old: stitched_tracks[:, -n_overlap:, :, :]
-                    # overlapping part in new: chunk_tracks_np[:, :n_overlap, :, :]
-                    alpha = np.linspace(0, 1, n_overlap).reshape(1, -1, 1, 1)
-                    overlap_old_tracks = stitched_tracks[:, -n_overlap:, :, :]
-                    overlap_new_tracks = chunk_tracks_np[:, :n_overlap, :, :]
 
-                    blended_tracks = (1 - alpha) * overlap_old_tracks + alpha * overlap_new_tracks
-                    stitched_tracks[:, -n_overlap:, :, :] = blended_tracks
-                    
-                    overlap_old_visibilities = stitched_visibilities[:, -n_overlap:, :]
-                    overlap_new_visibilities = chunk_visibilities_np[:, :n_overlap, :]
-                    
-                    blended_visibilities = overlap_old_visibilities & overlap_new_visibilities  # Both must be visible
-                    stitched_visibilities[:, -n_overlap:, :] = blended_visibilities
+                    old = stitched_tracks[:, -n_overlap:, :, :]     # (1, overlap, N, 2)
+                    new = chunk_tracks_np[:, :n_overlap, :, :]
 
-                    # Append non-overlapping part
+                    # --------------------------------------------------
+                    # ✅ 核心修复：Robust Rigid Alignment（无漂移关键）
+                    # --------------------------------------------------
+                    diff = old - new   # (1, overlap, N, 2)
+
+                    # reshape → (overlap*N, 2)
+                    diff_2d = diff.reshape(-1, 2)
+
+                    # 去 NaN
+                    valid = ~np.isnan(diff_2d).any(axis=1)
+                    diff_valid = diff_2d[valid]
+
+                    if len(diff_valid) > 10:
+                        offset = np.nanmean(diff_valid, axis=0)  # 使用均值对齐，减少累积偏差
+                    else:
+                        offset = np.zeros((2,))
+
+                    offset = offset.reshape(1, 1, 1, 2)
+
+                    # 对齐整个新chunk
+                    chunk_tracks_np = chunk_tracks_np + offset
+
+                    # --------------------------------------------------
+                    # ✅ 修复：使用线性插值 Blending 处理衔接处的跳变
+                    # --------------------------------------------------
+                    # 这样做可以确保 start_frame 到之前拼接点之间的过渡更平滑
+                    alpha = np.linspace(0, 1, n_overlap).reshape(1, n_overlap, 1, 1)
+                    blended_overlap = (1 - alpha) * old + alpha * chunk_tracks_np[:, :n_overlap, :, :]
+                    
+                    # 更新旧的 overlap 部分
+                    stitched_tracks[:, -n_overlap:, :, :] = blended_overlap
+
+                    # 拼接剩余的部分
                     stitched_tracks = np.concatenate(
-                        [stitched_tracks, chunk_tracks_np[:, n_overlap:, :, :]], axis=1
+                        [stitched_tracks, chunk_tracks_np[:, n_overlap:, :, :]],
+                        axis=1
                     )
+
                     stitched_visibilities = np.concatenate(
-                        [stitched_visibilities, chunk_visibilities_np[:, n_overlap:, :]], axis=1
+                        [stitched_visibilities, chunk_vis_np[:, n_overlap:, :]],
+                        axis=1
                     )
+
                 else:
                     stitched_tracks = np.concatenate(
-                        [stitched_tracks, chunk_tracks_np], axis=1
+                        [stitched_tracks, chunk_tracks_np],
+                        axis=1
                     )
                     stitched_visibilities = np.concatenate(
-                        [stitched_visibilities, chunk_visibilities_np], axis=1
+                        [stitched_visibilities, chunk_vis_np],
+                        axis=1
                     )
 
+            # --------------------------------------------------
+            # 下一段 query（使用已对齐的坐标作为起始点，减少累积偏差）
+            # --------------------------------------------------
             if end_frame == T:
                 break
 
-            # Prepare next query
+            # 采用动态起始帧跳转
             next_start_frame = end_frame - overlap
             if next_start_frame <= start_frame:
                 next_start_frame = start_frame + 1
             if next_start_frame >= T - 1:
                 break
 
+            # 计算下一段的起始 query
             query_idx = next_start_frame - start_frame
-            # shape (1, T_chunk, N, 2) -> get [0, query_idx, :, :] -> (N, 2)
+            # 这里的 last_pos 是在当前 chunk 坐标系下，经过偏移修正后的坐标
             last_pos = chunk_tracks_np[0, query_idx, :, :]
 
-            new_q = torch.zeros((1, last_pos.shape[0], 3), device=self.device)
+            new_q = torch.zeros((1, N, 3), device=self.device)
             new_q[0, :, 0] = 0
-            new_q[0, :, 1:] = torch.from_numpy(last_pos).to(self.device)
-            current_queries = new_q
+            new_q[0, :, 1:] = torch.from_numpy(last_pos).to(self.device).float()
 
+            current_queries = new_q
             start_frame = next_start_frame
 
-        # Final conversion
-        return self._to_pixel_tracks(stitched_tracks), self._to_pixel_visibilities(stitched_visibilities)
+        return self._to_pixel_tracks(stitched_tracks), \
+            self._to_pixel_visibilities(stitched_visibilities)

@@ -3,15 +3,34 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt, correlate
-from scipy.integrate import cumulative_trapezoid
 from scipy.fft import rfft, rfftfreq
 from scipy.stats import wasserstein_distance
 from scipy.spatial.distance import euclidean, cosine
 
 # ================= Configuration =================
-SEISMIC_TXT_PATH = r"txt_home/sample3_trimed206b.txt"
-# Assuming we want to compare with the corrected cancellation outputs:
-VISUAL_CSV_PATH = r"output/sample3_output_cancel/sample3_corrected_surface_waveform.csv"
+# qample.mp4
+# SEISMIC_TXT_PATH = r"txt_home/qample_trimed206b.txt"
+# VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
+
+# qample2.mp4
+SEISMIC_TXT_PATH = r"txt_home\sample206b.txt"
+VISUAL_CSV_PATH = r"output\\032901_sample_output_cancel\sample_corrected_surface_waveform.csv"
+
+# Axis Mapping (Camera's perspective vs Seismometer)
+# Camera visual axes mapped to Seismograph axes.
+# Options: 'NS' (North-South), 'SN' (South-North, -NS), 'EW' (East-West), 'WE' (West-East, -EW)
+
+# Default
+VISUAL_X_MAPS_TO = 'NS'
+VISUAL_Y_MAPS_TO = 'EW'
+
+# qample.mp4
+VISUAL_X_MAPS_TO = 'NS'
+VISUAL_Y_MAPS_TO = 'WE'
+
+# qample2.mp4
+VISUAL_X_MAPS_TO = 'SN'
+VISUAL_Y_MAPS_TO = 'EW'
 
 # Seismometer specs
 SEISMIC_FS = 100.0                   # 100 Hz
@@ -21,56 +40,74 @@ G_TO_MM = 9806.65                    # 1g = 9806.65 mm/s^2
 # Visual tracking specs
 VISUAL_FS = 25.0                     # 25 Hz from sample.mp4
 
-# Integration Filter Settings
-HP_CUTOFF = 0.5                      # High-pass filter cutoff (Hz) to remove baseline drift
+# If visual displacement is not in mm, set proper scale here.
+# e.g., pixel to mm conversion factor.
+VISUAL_DISP_SCALE_TO_MM = 1.0
+
+# Differentiation filter settings (for disp -> acc)
+HP_CUTOFF = 0.5                      # remove low-frequency drift before differentiation
+LP_CUTOFF = 8.0                      # suppress high-frequency noise after differentiation
 
 # ================= Helper Functions =================
 def highpass_filter(data, cutoff, fs, order=4):
     """Fourth-order Butterworth high-pass filter."""
     nyq = 0.5 * fs
-    normal_cutoff = cutoff / nyq
+    normal_cutoff = np.clip(cutoff / nyq, 1e-6, 0.999)
     b, a = butter(order, normal_cutoff, btype='high', analog=False)
     return filtfilt(b, a, data)
 
-def double_integrate(acc, dt, cutoff, fs):
-    """
-    Integrate acceleration twice to get displacement, 
-    with high-pass filtering at each step to prevent drift.
-    """
-    # 1. Detrend and filter acceleration
-    acc = acc - np.mean(acc)
-    acc_filt = highpass_filter(acc, cutoff, fs)
-    
-    # 2. Integrate to velocity
-    vel = cumulative_trapezoid(acc_filt, dx=dt, initial=0)
-    vel_filt = highpass_filter(vel, cutoff, fs)
-    
-    # 3. Integrate to displacement
-    disp = cumulative_trapezoid(vel_filt, dx=dt, initial=0)
-    disp_filt = highpass_filter(disp, cutoff, fs)
-    
-    return disp_filt
+def lowpass_filter(data, cutoff, fs, order=4):
+    """Fourth-order Butterworth low-pass filter."""
+    nyq = 0.5 * fs
+    normal_cutoff = np.clip(cutoff / nyq, 1e-6, 0.999)
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return filtfilt(b, a, data)
+
+def displacement_to_acceleration(disp, fs, hp_cutoff, lp_cutoff):
+    """Convert displacement to acceleration by second-order differentiation."""
+    dt = 1.0 / fs
+    disp = disp - np.mean(disp)
+    disp_hp = highpass_filter(disp, hp_cutoff, fs)
+
+    vel = np.gradient(disp_hp, dt)
+    acc = np.gradient(vel, dt)
+    acc_lp = lowpass_filter(acc, lp_cutoff, fs)
+    return acc_lp
+
+def safe_zscore(signal):
+    std = np.std(signal)
+    if std < 1e-12:
+        return signal - np.mean(signal)
+    return (signal - np.mean(signal)) / std
 
 def align_and_evaluate(ref_signal, test_signal):
     """
-    不进行时间对齐（无shift），直接对齐长度后计算指标
+    Synchronize two signals using cross-correlation and calculate metrics.
+    Both signals must be at the same sampling rate.
     """
-    # Normalize signals
-    ref_norm = (ref_signal - np.mean(ref_signal)) / np.std(ref_signal)
-    test_norm = (test_signal - np.mean(test_signal)) / np.std(test_signal)
+    ref_norm = safe_zscore(ref_signal)
+    test_norm = safe_zscore(test_signal)
 
-    # ❌ 移除 cross-correlation 对齐
-    shift = 0
+    cc = correlate(ref_norm, test_norm, mode='full')
+    shift = np.argmax(cc) - (len(test_norm) - 1)
 
-    # ✅ 直接裁剪到相同长度
-    min_len = min(len(ref_norm), len(test_norm))
-    ref_aligned = ref_norm[:min_len]
-    test_aligned = test_norm[:min_len]
+    if shift > 0:
+        ref_aligned = ref_norm[shift:]
+        test_aligned = test_norm[:-shift]
+    elif shift < 0:
+        ref_aligned = ref_norm[:shift]
+        test_aligned = test_norm[-shift:]
+    else:
+        ref_aligned = ref_norm
+        test_aligned = test_norm
 
-    # Calculate metrics
+    min_len = min(len(ref_aligned), len(test_aligned))
+    ref_aligned = ref_aligned[:min_len]
+    test_aligned = test_aligned[:min_len]
+
     pearsons_r = np.corrcoef(ref_aligned, test_aligned)[0, 1]
-    rmse = np.sqrt(np.mean((ref_aligned - test_aligned)**2))
     mae = np.mean(np.abs(ref_aligned - test_aligned))
+    rmse = np.sqrt(np.mean((ref_aligned - test_aligned) ** 2))
     euclid_dist = euclidean(ref_aligned, test_aligned)
     cos_sim = 1.0 - cosine(ref_aligned, test_aligned)
     wass_dist = wasserstein_distance(ref_aligned, test_aligned)
@@ -93,7 +130,9 @@ def compute_fft(signal_data, fs):
     
     # Get Amplitude
     amp = np.abs(yf)
-    amp = amp / np.max(amp)  # Normalize amplitude to 0-1 for easy comparison
+    max_amp = np.max(amp)
+    if max_amp > 0:
+        amp = amp / max_amp  # Normalize amplitude to 0-1 for easy comparison
     
     # Find dominant frequency
     peak_idx = np.argmax(amp[1:]) + 1 # Skip DC component
@@ -110,16 +149,26 @@ def main():
         print(f"Error loading TXT: {e}")
         return
 
-    # User mappings: EW -> Y-axis, NS -> X-axis
-    # Unit: g -> mm/s^2
-    acc_y = seis_df['EW'].values * G_TO_MM
-    acc_x = seis_df['NS'].values * G_TO_MM
+    # Helper function to extract and invert axes if strictly needed
+    def get_mapped_acc(df, mapping):
+        mapping = mapping.upper()
+        if mapping == 'NS':
+            return df['NS'].values
+        elif mapping == 'SN':
+            return -df['NS'].values
+        elif mapping == 'EW':
+            return df['EW'].values
+        elif mapping == 'WE':
+            return -df['EW'].values
+        else:
+            raise ValueError(f"Unknown axis mapping: {mapping}. Must be one of NS, SN, EW, WE.")
 
-    print("2. Integrating Acceleration to Displacement...")
-    disp_seis_y = double_integrate(acc_y, SEISMIC_DT, HP_CUTOFF, SEISMIC_FS)
-    disp_seis_x = double_integrate(acc_x, SEISMIC_DT, HP_CUTOFF, SEISMIC_FS)
-    
-    time_seis = np.arange(len(disp_seis_y)) * SEISMIC_DT
+    # User mappings: visual x/y -> seismometer axes
+    # Unit: g -> mm/s^2
+    acc_seis_x = get_mapped_acc(seis_df, VISUAL_X_MAPS_TO) * G_TO_MM
+    acc_seis_y = get_mapped_acc(seis_df, VISUAL_Y_MAPS_TO) * G_TO_MM
+
+    time_seis = np.arange(len(acc_seis_y)) * SEISMIC_DT
 
     print("3. Loading Visual Tracking Data (25Hz)...")
     try:
@@ -128,26 +177,30 @@ def main():
         print(f"Error loading CSV: {e}")
         return
         
-    time_vis = vis_df['time'].values
-    disp_vis_x = vis_df['mean_x'].values
-    disp_vis_y = vis_df['mean_y'].values
-    
-    # High-pass filter visual data just in case there's any slow drift
-    disp_vis_x = highpass_filter(disp_vis_x - np.mean(disp_vis_x), HP_CUTOFF, VISUAL_FS)
-    disp_vis_y = highpass_filter(disp_vis_y - np.mean(disp_vis_y), HP_CUTOFF, VISUAL_FS)
+    if 'mean_x' not in vis_df.columns or 'mean_y' not in vis_df.columns:
+        raise ValueError("Visual CSV must contain columns: mean_x, mean_y")
 
-    print("4. Upsampling Visual Data to match Seismometer (100Hz) for precise alignment...")
-    # Resample 25Hz visual to 100Hz (4x upsampling) 
-    # Use linear interpolation based on time
-    disp_vis_x_100hz = np.interp(time_seis, time_vis, disp_vis_x)
-    disp_vis_y_100hz = np.interp(time_seis, time_vis, disp_vis_y)
+    if 'time' in vis_df.columns:
+        time_vis = vis_df['time'].values
+    else:
+        time_vis = np.arange(len(vis_df)) / VISUAL_FS
 
-    print("5. Aligning timelines & calculating correlation...")
-    shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(disp_seis_x, disp_vis_x_100hz)
-    shift_y, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(disp_seis_y, disp_vis_y_100hz)
+    disp_vis_x = vis_df['mean_x'].values * VISUAL_DISP_SCALE_TO_MM
+    disp_vis_y = vis_df['mean_y'].values * VISUAL_DISP_SCALE_TO_MM
+
+    print("4. Converting visual displacement to acceleration (second derivative)...")
+    acc_vis_x_25hz = displacement_to_acceleration(disp_vis_x, VISUAL_FS, HP_CUTOFF, LP_CUTOFF)
+    acc_vis_y_25hz = displacement_to_acceleration(disp_vis_y, VISUAL_FS, HP_CUTOFF, LP_CUTOFF)
+
+    print("5. Upsampling visual acceleration to match Seismometer (100Hz)...")
+    acc_vis_x_100hz = np.interp(time_seis, time_vis, acc_vis_x_25hz)
+    acc_vis_y_100hz = np.interp(time_seis, time_vis, acc_vis_y_25hz)
+
+    print("6. Aligning timelines & calculating correlation...")
+    shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(acc_seis_x, acc_vis_x_100hz)
+    shift_y, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(acc_seis_y, acc_vis_y_100hz)
     
-    print("6. Computing FFT for Frequency Domain Analysis...")
-    # Calculate FFT for X (NS) and Y (EW) aligned segments
+    print("7. Computing FFT for Frequency Domain Analysis...")
     freq_seis_x, amp_seis_x, peak_f_seis_x = compute_fft(ref_x, SEISMIC_FS)
     freq_vis_x, amp_vis_x, peak_f_vis_x = compute_fft(test_x, SEISMIC_FS)
     
@@ -155,19 +208,19 @@ def main():
     freq_vis_y, amp_vis_y, peak_f_vis_y = compute_fft(test_y, SEISMIC_FS)
     
     # Error in dominant frequency
-    f_err_x = abs(peak_f_seis_x - peak_f_vis_x) / peak_f_seis_x * 100
-    f_err_y = abs(peak_f_seis_y - peak_f_vis_y) / peak_f_seis_y * 100
+    f_err_x = abs(peak_f_seis_x - peak_f_vis_x) / peak_f_seis_x * 100 if peak_f_seis_x > 0 else 0.0
+    f_err_y = abs(peak_f_seis_y - peak_f_vis_y) / peak_f_seis_y * 100 if peak_f_seis_y > 0 else 0.0
 
     print("\n" + "="*50)
-    print(f"--- 📊 EVALUATION METRICS (对标论文 4.1 & 4.2) ---")
-    print(f"X-Axis (Visual) vs NS (Seismometer):")
-    print(f"  [1] 时域对齐波形对比 (4.1 手动追踪对标)")
+    print(f"--- 📊 加速度对比指标 (视觉位移二阶导 vs 地震仪加速度) ---")
+    print(f"X-Axis (Visual Disp→Acc) vs {VISUAL_X_MAPS_TO} (Seismometer Acc):")
+    print(f"  [1] 时域对齐波形对比")
     print(f"  - Peak Time Alignment Shift: {shift_x * SEISMIC_DT:.3f} seconds")
     print(f"  - Pearson Correlation (r):   {r_x:.4f}  (1.0 is perfect)")
     print(f"  - MAE (平均绝对误差):          {mae_x:.4f}")
     print(f"  - RMSE (均方根误差):           {rmse_x:.4f}")
     
-    print(f"\n  [2] 统计学特征相似度 (4.2 强震仪数据对标)")
+    print(f"\n  [2] 统计学特征相似度")
     print(f"  - 欧氏距离 (Euclid Dist):      {euclid_x:.4f}")
     print(f"  - 余弦相似度 (Cosine Sim):     {cos_sim_x:.4f}  (1.0 is perfect)")
     print(f"  - Wasserstein 距离:           {wass_dist_x:.4f}")
@@ -178,14 +231,14 @@ def main():
     print(f"  - Frequency Error:           {f_err_x:.2f} %")
     print("-" * 50)
     
-    print(f"Y-Axis (Visual) vs EW (Seismometer):")
-    print(f"  [1] 时域对齐波形对比 (4.1 手动追踪对标)")
+    print(f"Y-Axis (Visual Disp→Acc) vs {VISUAL_Y_MAPS_TO} (Seismometer Acc):")
+    print(f"  [1] 时域对齐波形对比")
     print(f"  - Peak Time Alignment Shift: {shift_y * SEISMIC_DT:.3f} seconds")
     print(f"  - Pearson Correlation (r):   {r_y:.4f}  (1.0 is perfect)")
     print(f"  - MAE (平均绝对误差):          {mae_y:.4f}")
     print(f"  - RMSE (均方根误差):           {rmse_y:.4f}")
     
-    print(f"\n  [2] 统计学特征相似度 (4.2 强震仪数据对标)")
+    print(f"\n  [2] 统计学特征相似度")
     print(f"  - 欧氏距离 (Euclid Dist):      {euclid_y:.4f}")
     print(f"  - 余弦相似度 (Cosine Sim):     {cos_sim_y:.4f}  (1.0 is perfect)")
     print(f"  - Wasserstein 距离:           {wass_dist_y:.4f}")
@@ -196,8 +249,7 @@ def main():
     print(f"  - Frequency Error:           {f_err_y:.2f} %")
     print("="*50 + "\n")
 
-    print("7. Plotting comparisons...")
-    # Change figure size to accommodate 4 subplots
+    print("8. Plotting comparisons...")
     plt.figure(figsize=(16, 12))
     
     # Timeline generation for aligned segment
@@ -206,27 +258,27 @@ def main():
 
     # Plot 1: X-Axis Time Domain
     plt.subplot(4, 1, 1)
-    plt.title(f"X-Axis Time Domain (Visual vs Seismometer NS) | R: {r_x:.4f}")
-    plt.plot(t_plot_x, ref_x, label="Seismometer NS (GT)", color='black', alpha=0.7)
-    plt.plot(t_plot_x, test_x, label="Visual Output X", color='blue', alpha=0.8, linestyle='--')
-    plt.ylabel("Z-Score (Disp)")
+    plt.title(f"X-Axis Acceleration (Visual Disp→Acc vs Seis {VISUAL_X_MAPS_TO}) | R: {r_x:.4f}")
+    plt.plot(t_plot_x, ref_x, label=f"Seismometer {VISUAL_X_MAPS_TO} (Acc)", color='black', alpha=0.7)
+    plt.plot(t_plot_x, test_x, label="Visual Disp→Acc X", color='blue', alpha=0.8, linestyle='--')
+    plt.ylabel("Z-Score (Acc)")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
     # Plot 2: Y-Axis Time Domain
     plt.subplot(4, 1, 2)
-    plt.title(f"Y-Axis Time Domain (Visual vs Seismometer EW) | R: {r_y:.4f}")
-    plt.plot(t_plot_y, ref_y, label="Seismometer EW (GT)", color='black', alpha=0.7)
-    plt.plot(t_plot_y, test_y, label="Visual Output Y", color='red', alpha=0.8, linestyle='--')
-    plt.ylabel("Z-Score (Disp)")
+    plt.title(f"Y-Axis Acceleration (Visual Disp→Acc vs Seis {VISUAL_Y_MAPS_TO}) | R: {r_y:.4f}")
+    plt.plot(t_plot_y, ref_y, label=f"Seismometer {VISUAL_Y_MAPS_TO} (Acc)", color='black', alpha=0.7)
+    plt.plot(t_plot_y, test_y, label="Visual Disp→Acc Y", color='red', alpha=0.8, linestyle='--')
+    plt.ylabel("Z-Score (Acc)")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
     # Plot 3: X-Axis Frequency Domain
     plt.subplot(4, 1, 3)
     plt.title(f"X-Axis Frequency Spectrum | Dominant Freq Error: {f_err_x:.2f}%")
-    plt.plot(freq_seis_x, amp_seis_x, label=f"Seis NS ({peak_f_seis_x:.2f}Hz)", color='black', alpha=0.7)
-    plt.plot(freq_vis_x, amp_vis_x, label=f"Visual X ({peak_f_vis_x:.2f}Hz)", color='blue', alpha=0.8)
+    plt.plot(freq_seis_x, amp_seis_x, label=f"Seis {VISUAL_X_MAPS_TO} ({peak_f_seis_x:.2f}Hz)", color='black', alpha=0.7)
+    plt.plot(freq_vis_x, amp_vis_x, label=f"Visual Disp→Acc X ({peak_f_vis_x:.2f}Hz)", color='blue', alpha=0.8)
     plt.xlim(0, 10)  # Usually structural vibrations are < 10Hz
     plt.ylabel("Normalized Amp")
     plt.legend(loc="upper right")
@@ -235,8 +287,8 @@ def main():
     # Plot 4: Y-Axis Frequency Domain
     plt.subplot(4, 1, 4)
     plt.title(f"Y-Axis Frequency Spectrum | Dominant Freq Error: {f_err_y:.2f}%")
-    plt.plot(freq_seis_y, amp_seis_y, label=f"Seis EW ({peak_f_seis_y:.2f}Hz)", color='black', alpha=0.7)
-    plt.plot(freq_vis_y, amp_vis_y, label=f"Visual Y ({peak_f_vis_y:.2f}Hz)", color='red', alpha=0.8)
+    plt.plot(freq_seis_y, amp_seis_y, label=f"Seis {VISUAL_Y_MAPS_TO} ({peak_f_seis_y:.2f}Hz)", color='black', alpha=0.7)
+    plt.plot(freq_vis_y, amp_vis_y, label=f"Visual Disp→Acc Y ({peak_f_vis_y:.2f}Hz)", color='red', alpha=0.8)
     plt.xlim(0, 10)
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Normalized Amp")
@@ -244,7 +296,8 @@ def main():
     plt.grid(True, linestyle=':', alpha=0.7)
 
     plt.tight_layout()
-    out_img = "output/visual_vs_seismic_alignment_with_fft.png"
+    out_img = "output/visual_disp2acc_vs_seismic_acc.png"
+    os.makedirs(os.path.dirname(out_img), exist_ok=True)
     plt.savefig(out_img, dpi=300)
     print(f"Comparison plot saved to {out_img}")
     plt.show()

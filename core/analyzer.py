@@ -105,6 +105,14 @@ class Analyzer:
             median_y = np.nanmedian(displacements_y, axis=1)
             mean_x = np.nanmean(displacements_x, axis=1)
             median_x = np.nanmedian(displacements_x, axis=1)
+
+        # Baseline drift correction (Detrending)
+        from scipy.signal import detrend
+        if len(mean_y) > 0:
+            mean_y = detrend(np.nan_to_num(mean_y), type='linear')
+            mean_x = detrend(np.nan_to_num(mean_x), type='linear')
+            median_y = detrend(np.nan_to_num(median_y), type='linear')
+            median_x = detrend(np.nan_to_num(median_x), type='linear')
         
         # Save to CSV
         csv_path = os.path.join(self.output_dir, base_name + "_surface_waveform.csv")
@@ -339,6 +347,12 @@ class Analyzer:
         # 获取相对起始点的位移 (Relative Displacement)
         disp_mm = (mean_phys_tracks - mean_phys_tracks[0])
         
+        # --- Baseline drift correction: 强制去趋势修复基线漂移 ---
+        from scipy.signal import detrend
+        if len(disp_mm) > 2:
+            disp_mm[:, 0] = detrend(disp_mm[:, 0], type='linear')
+            disp_mm[:, 1] = detrend(disp_mm[:, 1], type='linear')
+
         # --- (Optional) Signal Smoothing: 应用低通滤波以抑制求导放大的高频噪声 ---
         
         cutoff = 2.0
