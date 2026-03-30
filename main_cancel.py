@@ -42,10 +42,10 @@ DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
-MAX_POINTS_TARGET = 30
-MAX_POINTS_REF = 30
-CHUNK_LEN = 100
-OVERLAP = 10
+MAX_POINTS_TARGET = 10
+MAX_POINTS_REF = 10 
+CHUNK_LEN = 150
+OVERLAP = 20
 
 def main():
     parser = argparse.ArgumentParser(description="Seismic Surface Tracker with Reference Cancellation")
@@ -169,19 +169,79 @@ def main():
     if base_name == "sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
-        src_pts = [
-        [1002, 544],
-        [1375, 620],
-        [1155, 925],
-        [608, 717],]
+        src_calib = [
+            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
+        ]
         
-        dst_pts = [
-        [0, 0],
-        [880, 0],
-        [880, 150],
-        [0, 150],]
+        # Destination Physical Coordinates (mm)
+        dst_calib = [
+            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+        ]
+        
+        analyzer.setup_calibration(src_calib, dst_calib)
+    elif base_name == "old_sample":
+        print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
+        # Source Pixels (Extracted manually)
+        src_calib = [
+            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
+        ]
+        
+        # Destination Physical Coordinates (mm)
+        dst_calib = [
+            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+        ]
+        
+        analyzer.setup_calibration(src_calib, dst_calib)
+        
+    elif base_name == "sample2":
+        print("\n[INFO] Applying Engineered Calibration for sample2.mp4...")
+        # Source Pixels (Extracted manually)
+        src_calib = [
+            [478, 482], [656, 478], [597, 436], [688, 393]
+        ]
+        
+        # Destination Physical Coordinates (mm)
+        dst_calib = [
+            [0, 0], [220, 600], [110, 270], [220, 600]
+        ]
+        
+        analyzer.setup_calibration(src_calib, dst_calib)
+        
+    elif base_name == "sample3":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[435, 753], [1312, 728], [1515, 668], [1587, 818], [1641, 785], [1765, 733], [1806, 711]]
+        
+        dst_pts = [[0,0],[525,330],[875,330],[450,630],[600,630],[800,630],[950,630]]
         
         analyzer.setup_calibration(src_pts, dst_pts)
+        
+    elif base_name == "sample4":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [
+            [402, 430],
+            [1045, 398],
+            [1300, 594],
+            [500, 623], 
+        ]
+        [[1121, 953], [1133, 951], [990, 811], [998, 809], [1765, 833], [1771, 830], [1568, 759], [1575, 757], [873, 686], [882, 685], [833, 641], [841, 641]]
+        dst_pts = [
+        [0, 0],
+        [415, 0],
+        [415, 200],
+        [0, 200],]
+        
+        analyzer.setup_calibration(src_pts, dst_pts)
+        
+    elif base_name == "qample2":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
+        dst_pts = [[0,0],[15,0],[0,60],[15,60],[865,0],[880,0],[865,60],[880,60],[0,150],[15,150],[0,210],[15,210],[865,150],[880,150],[865,210],[880,210]]
+
+        analyzer.setup_calibration(src_pts, dst_pts)
+        
     else:
         print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
 
@@ -212,35 +272,99 @@ def main():
     tracks, visibilities = engine.track_video_chunked(frames, all_points, chunk_len=CHUNK_LEN, overlap=OVERLAP)
     print(f"Tracking complete. Shape: {tracks.shape}")
     
-    # 7. Cancellation Logic
+    # 7. Cancellation Logic (with Assessment & Smoothing)
     tracks_target = tracks[:num_target]
     tracks_ref = tracks[num_target:]
     
-    # Calculate Reference Motion (Camera Motion)
-    # 改进：取前几帧的均值作为参考原点，避免第一帧单帧跳变影响全局
+    # --- A. 原始运动解算 ---
+    # 1. 提取参考框(Camera)全局位移
     ref_initial = np.nanmean(tracks_ref[:, :3, :], axis=1, keepdims=True) 
-    ref_shifts = tracks_ref - ref_initial # (N_ref, T, 2)
-    
-    # Average over all reference points, ignoring NaNs
+    ref_shifts = tracks_ref - ref_initial
     avg_camera_shift = np.nanmean(ref_shifts, axis=0) # (T, 2)
-    # 强制将均值漂移归零，确保抵消只处理动态抖动
     avg_camera_shift -= np.nanmean(avg_camera_shift, axis=0) 
     
-    # Fill any NaNs in camera shift (if all ref points lost) with 0 or previous
-    # Simple forward fill for now
-    mask = np.isnan(avg_camera_shift)
-    if mask.any():
-        print("Warning: Some frames have no valid reference tracks. Interpolating.")
-        # Very basic fill
-        idx = np.where(~mask, np.arange(mask.shape[0]), 0)
-        np.maximum.accumulate(idx, axis=0, out=idx)
-        avg_camera_shift = avg_camera_shift[idx]
+    # 2. 提取目标框(Target)全局位移 (用于一致性检验)
+    target_initial = np.nanmean(tracks_target[:, :3, :], axis=1, keepdims=True)
+    target_shifts = tracks_target - target_initial
+    avg_target_shift = np.nanmean(target_shifts, axis=0)
+    avg_target_shift -= np.nanmean(avg_target_shift, axis=0)
 
-    # Correct Target Tracks
-    # Target_corrected(t) = Target(t) - Camera_Shift(t)
-    corrected_tracks = tracks_target - avg_camera_shift[None, :, :]
+    # 修复空白帧导致的 NaNs
+    for i in range(2):
+        mask_c = np.isnan(avg_camera_shift[:, i])
+        if mask_c.any():
+            idx_c = np.where(~mask_c, np.arange(mask_c.shape[0]), 0)
+            np.maximum.accumulate(idx_c, out=idx_c)
+            avg_camera_shift[:, i] = avg_camera_shift[idx_c, i]
+            
+        mask_t = np.isnan(avg_target_shift[:, i])
+        if mask_t.any():
+            idx_t = np.where(~mask_t, np.arange(mask_t.shape[0]), 0)
+            np.maximum.accumulate(idx_t, out=idx_t)
+            avg_target_shift[:, i] = avg_target_shift[idx_t, i]
+
+    # --- B. 相关性评估模块 (Axis-Independent Gating Logic) ---
+    print("\n--- Evaluating Motion Correlation ---")
+    def safe_corr(a, b):
+        if np.std(a) < 1e-6 or np.std(b) < 1e-6: return 0.0
+        return np.corrcoef(a, b)[0, 1]
+
+    corr_x = safe_corr(avg_target_shift[:, 0], avg_camera_shift[:, 0])
+    corr_y = safe_corr(avg_target_shift[:, 1], avg_camera_shift[:, 1])
+    print(f"X-Axis Motion Correlation (Target vs Ref): {corr_x:.4f}")
+    print(f"Y-Axis Motion Correlation (Target vs Ref): {corr_y:.4f}")
+
+    # 为 X 轴和 Y 轴分别计算独立的自适应抵消权重
+    # 如果相关性 < 0.1，权重视为 0（即视为噪音，不进行抵消，保护原数据）
+    # 如果相关性 > 0.5，权重为 100% 抵消
+    def get_axis_weight(corr):
+        if corr > 0.5:
+            return 1.0
+        elif corr > 0.1:
+            return (corr - 0.1) / 0.4
+        else:
+            return 0.0
+
+    weight_x = get_axis_weight(corr_x)
+    weight_y = get_axis_weight(corr_y)
     
-    print("Cancellation applied.")
+    print(f"[评估] X轴抵消权重: {weight_x:.2f} | Y轴抵消权重: {weight_y:.2f}")
+
+    # 创建 [T, 2] 的动态掩码矩阵
+    cancel_weight_matrix = np.array([weight_x, weight_y])
+
+    # --- C. 亚像素平滑滤波 (Low-pass Filter) ---
+    # 移除强制高斯平滑，让原汁原味的相机高频抖动能够去抵消目标中的同频抖动
+    print("[滤噪] 移除对参考框位移的高斯平滑滤波处理，保留高频相机抖动以进行完全抵消。")
+    avg_camera_shift_smooth = avg_camera_shift
+
+    # --- D. 修正核心轨迹应用 (独立分通道抵消) ---
+    # 这一步非常关键：分别乘以对应的轴向权重，对于负相关轴，偏移直接置0
+    final_cancellation = avg_camera_shift_smooth * cancel_weight_matrix[None, :]
+    
+    # 覆盖原变量以便于后续输出文件能够正确记录“最终真正被减掉”的有效位移
+    avg_camera_shift = final_cancellation
+    
+    # 将计算好的干净趋势，从目标追踪轨迹中减除
+    corrected_tracks = tracks_target - avg_camera_shift[None, :, :]
+
+    # --- E. 分段锚点去除漂移 (window anchor-based baseline reset) ---
+    def anchor_segment_detrend(tracks, window_frames=60):
+        # tracks: (N, T, 2)
+        N, T, C = tracks.shape
+        out = tracks.copy()
+        for start in range(0, T, window_frames):
+            end = min(start + window_frames, T)
+            segment = out[:, start:end, :]
+            # 以当前窗口中的点均值（X,Y）作为 anchor，用于去除偏移基线
+            base = np.nanmean(segment.reshape(-1, C), axis=0)  # (2,)
+            if np.isnan(base).any():
+                continue
+            out[:, start:end, :] = segment - base[None, None, :]
+        return out
+
+    corrected_tracks = anchor_segment_detrend(corrected_tracks, window_frames=int(fps*2))
+    print("Cancellation module completed (and anchor-based segment detrend applied).")
 
     # 8. Analyze & Visualize
     
@@ -267,8 +391,9 @@ def main():
     # but we might want to indicate which were target vs ref)
     # We can visualize all tracks.
     vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
-    # 更改为基础可视化，移除侧边栏实时波形图
-    visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    # Use the side-by-side visualizer: left = video with tracks, right = time/displacement plot
+    from utils.visualizer import visualize_tracks_with_plot
+    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
     
     # Compute Waveform on CORRECTED data

@@ -15,7 +15,7 @@ from scipy.spatial.distance import euclidean, cosine
 # VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
 
 # qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\sample_p1206a.txt"
+SEISMIC_TXT_PATH = r"txt_home\sample_p1901.txt"
 VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_corrected_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
@@ -48,6 +48,7 @@ VISUAL_FS = 25.0                     # 25 Hz from sample.mp4
 
 # Integration Filter Settings
 HP_CUTOFF = 0.5                      # High-pass filter cutoff (Hz) to remove baseline drift
+LP_CUTOFF = 5.0                      # Low-pass filter cutoff (Hz) to remove high-frequency tracking noise (毛刺)
 
 # ================= Helper Functions =================
 def highpass_filter(data, cutoff, fs, order=4):
@@ -55,6 +56,16 @@ def highpass_filter(data, cutoff, fs, order=4):
     nyq = 0.5 * fs
     normal_cutoff = cutoff / nyq
     b, a = butter(order, normal_cutoff, btype='high', analog=False)
+    return filtfilt(b, a, data)
+
+def lowpass_filter(data, cutoff, fs, order=4):
+    """Fourth-order Butterworth low-pass filter."""
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    # 避免截止频率超过尼奎斯特频率
+    if normal_cutoff >= 1.0:
+        normal_cutoff = 0.99
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
     return filtfilt(b, a, data)
 
 def double_integrate(acc, dt, cutoff, fs):
@@ -195,6 +206,10 @@ def main():
     # High-pass filter visual data just in case there's any slow drift
     disp_vis_x = highpass_filter(disp_vis_x - np.mean(disp_vis_x), HP_CUTOFF, VISUAL_FS)
     disp_vis_y = highpass_filter(disp_vis_y - np.mean(disp_vis_y), HP_CUTOFF, VISUAL_FS)
+    
+    # Low-pass filter structural tracking data to remove high-frequency noise (尖峰毛刺)
+    disp_vis_x = lowpass_filter(disp_vis_x, LP_CUTOFF, VISUAL_FS)
+    disp_vis_y = lowpass_filter(disp_vis_y, LP_CUTOFF, VISUAL_FS)
 
     print("4. Upsampling Visual Data to match Seismometer (100Hz) for precise alignment...")
     # Resample 25Hz visual to 100Hz (4x upsampling) 
