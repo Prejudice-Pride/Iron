@@ -15,7 +15,7 @@ from scipy.spatial.distance import euclidean, cosine
 # VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
 
 # qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\sample_p1901.txt"
+SEISMIC_TXT_PATH = r"txt_home\sample_p11301.txt"
 VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_corrected_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
@@ -87,19 +87,23 @@ def double_integrate(acc, dt, cutoff, fs):
     
     return disp_filt
 
-def align_and_evaluate(ref_signal, test_signal):
+def align_and_evaluate(ref_signal, test_signal, forced_shift=None):
     """
     Synchronize two signals using cross-correlation and calculate metrics.
     Both signals must be at the same sampling rate.
+    If forced_shift is given, it enforces that shift for alignment.
     """
     # Normalize signals for correlation
     ref_norm = (ref_signal - np.mean(ref_signal)) / np.std(ref_signal)
     test_norm = (test_signal - np.mean(test_signal)) / np.std(test_signal)
     
-    # Cross-correlation to find time shift
-    cc = correlate(ref_norm, test_norm, mode='full')
-    shift = np.argmax(cc) - (len(test_norm) - 1)
-    
+    if forced_shift is None:
+        # Cross-correlation to find time shift
+        cc = correlate(ref_norm, test_norm, mode='full')
+        shift = np.argmax(cc) - (len(test_norm) - 1)
+    else:
+        shift = forced_shift
+
     if shift > 0:
         ref_aligned = ref_norm[shift:]
         test_aligned = test_norm[:-shift]
@@ -219,8 +223,11 @@ def main():
 
     print("5. Aligning timelines & calculating correlation...")
     shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(disp_seis_x, disp_vis_x_100hz)
-    shift_y, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(disp_seis_y, disp_vis_y_100hz)
-    
+    # 统一使用 x 轴的 shift 对 y 轴进行对齐
+    shift_y, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(disp_seis_y, disp_vis_y_100hz, forced_shift=shift_x)
+    # 让输出一致表述为 x 轴 shift
+    shift_y = shift_x
+
     print("6. Computing FFT for Frequency Domain Analysis...")
     # Calculate FFT for X (NS) and Y (EW) aligned segments
     freq_seis_x, amp_seis_x, peak_f_seis_x = compute_fft(ref_x, SEISMIC_FS)
