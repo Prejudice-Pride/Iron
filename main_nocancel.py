@@ -1,0 +1,258 @@
+"""
+Seismic Surface Tracking Without Reference Cancellation
+===================================================
+
+This script preserves the original flow but removes reference cancellation steps.
+It tracks target and reference points and saves all results, while corrected tracks are the same as target tracks.
+
+Usage:
+    python main_nocancel.py [video_file] [output_dir]
+"""
+
+import os
+import sys
+import argparse
+import numpy as np
+import json
+
+# 解决 OpenMP 运行时冲突 (OMP: Error #15)
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+# Setup path for co-tracker
+REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "co-tracker"))
+if REPO_DIR not in sys.path and os.path.exists(REPO_DIR):
+    sys.path.insert(0, REPO_DIR)
+
+from core.engine import TrackingEngine
+from core.sampler import Sampler
+from core.analyzer import Analyzer
+from utils.video_io import read_frames
+from utils.visualizer import visualize_tracks
+from utils.self_calibration import SelfCalibration
+from utils.image_enhancement import enhance_frames
+
+INPUT_DIR = "input_videos"
+DEFAULT_VIDEO = "sample.mp4"
+OUTPUT_DIR = "output"
+
+# Configuration
+MAX_POINTS_TARGET = 10
+MAX_POINTS_REF = 10
+CHUNK_LEN = 150
+OVERLAP = 20
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Seismic Surface Tracker without Reference Cancellation")
+    parser.add_argument("video", nargs="?", default=None, help="Input video filename or path")
+    parser.add_argument("output", nargs="?", default=OUTPUT_DIR, help="Output directory")
+    args = parser.parse_args()
+
+    # 1. Resolve Input
+    if args.video:
+        inp = args.video
+        if not os.path.exists(inp):
+            candidate = os.path.join(INPUT_DIR, inp)
+            if os.path.exists(candidate):
+                inp = candidate
+            else:
+                print(f"Error: Video not found {inp}")
+                sys.exit(1)
+    else:
+        inp = os.path.join(INPUT_DIR, DEFAULT_VIDEO)
+        if not os.path.exists(inp):
+            print(f"Error: Default video not found {inp}")
+            sys.exit(1)
+
+    base_name = os.path.splitext(os.path.basename(inp))[0]
+    out_dir = os.path.join(args.output, f"{base_name}_output_nocancel")
+    os.makedirs(out_dir, exist_ok=True)
+
+    print(f"Processing: {inp}")
+    print(f"Output to: {out_dir}")
+
+    # 2. Logic Setup
+    sampler = Sampler(roi_dir="rois")
+    engine = TrackingEngine()
+    analyzer = Analyzer(output_dir=out_dir)
+    print("Sampler, Engine, Analyzer are loaded successfully!")
+
+    # 3. Read Video
+    print("Reading frames...")
+    frames, fps = read_frames(inp)
+    T, H, W = frames.shape[0], frames.shape[1], frames.shape[2]
+    print(f"Frames: T={T}, HxW={W}x{H}, fps={fps}")
+
+    # 3.a Attempt to load self-calibration parameters and apply to frames
+    calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
+    if os.path.exists(calib_path):
+        try:
+            with open(calib_path, 'r', encoding='utf-8') as f:
+                calib = json.load(f)
+            print(f"Found distortion params: {calib_path}. Applying correction...")
+            calib_obj = SelfCalibration()
+            calib_obj.k3 = float(calib.get('k3', 0.0))
+            calib_obj.k5 = float(calib.get('k5', 0.0))
+            cx = float(calib.get('cx', W/2.0))
+            cy = float(calib.get('cy', H/2.0))
+            calib_obj.center = (cx, cy)
+
+            corrected_frames = []
+            print('Applying distortion correction to all frames (this may take a while)...')
+            for i in range(frames.shape[0]):
+                corrected = calib_obj.apply_to_image(frames[i])
+                corrected_frames.append(corrected)
+            frames = np.stack(corrected_frames, axis=0)
+            print('Distortion correction applied to frames.')
+        except Exception as e:
+            print(f"Warning: Failed to load/apply distortion params: {e}")
+    else:
+        print(f"No distortion params file found at {calib_path}. Skipping auto-correction.")
+
+    # 3.b 图像增强滤波
+    print("\n--- Applying Image Enhancement ---")
+    frames = enhance_frames(frames, use_clahe=True, use_bilateral=False)
+
+    # 4. ROI Selection (Target + Reference)
+    ROI_SUFFIX = "_cancel_rois.json"
+
+    rois, roi_path = sampler.load_rois(base_name, roi_suffix=ROI_SUFFIX)
+
+    if rois is None:
+        print("\n--- ROI SELECTION REQUIRED ---")
+        print(f"No existing cancellation ROIs found for {base_name}.")
+        print("Please elect exactly 2 ROIs:")
+        print("  1. TARGET ROI (The object or surface to analyze).")
+        print("  2. REFERENCE ROI (Stable background/building for cancellation).")
+
+        can_interactive = bool(os.environ.get('DISPLAY')) or (os.name == 'nt')
+        if not can_interactive:
+            print("Error: Running in headless mode and no ROI file found.")
+            sys.exit(1)
+
+        rois = sampler.select_rois_interactive(frames[0], window_name="Select TARGET then REFERENCE")
+
+        if not rois or len(rois) != 2:
+            print(f"Error: Expected exactly 2 ROIs, got {len(rois) if rois else 0}.")
+            print("Please run again and select exactly 2 boxes.")
+            sys.exit(1)
+
+        sampler.save_rois(roi_path, rois)
+        print(f"Saved ROIs to {roi_path}")
+    else:
+        print(f"Loaded rois from {roi_path}")
+        if len(rois) != 2:
+            print(f"Warning: Loaded ROI file contains {len(rois)} ROIs. Expected 2. Using first two.")
+            if len(rois) < 2:
+                print("Error: Insufficient ROIs.")
+                sys.exit(1)
+            rois = rois[:2]
+
+    # ENGINEERED CALIBRATION SETUP
+    if base_name == "sample":
+        print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
+        src_calib = [[297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]]
+        dst_calib = [[0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]]
+        analyzer.setup_calibration(src_calib, dst_calib)
+    elif base_name == "old_sample":
+        print("\n[INFO] Applying Engineered Calibration for old_sample.mp4...")
+        src_calib = [[297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]]
+        dst_calib = [[0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]]
+        analyzer.setup_calibration(src_calib, dst_calib)
+    elif base_name == "sample2":
+        print("\n[INFO] Applying Engineered Calibration for sample2.mp4...")
+        src_calib = [[478, 482], [656, 478], [597, 436], [688, 393]]
+        dst_calib = [[0, 0], [220, 600], [110, 270], [220, 600]]
+        analyzer.setup_calibration(src_calib, dst_calib)
+    elif base_name == "sample3":
+        print("\n[INFO] Applying Engineered Calibration for sample3.mp4...")
+        src_pts = [[435, 753], [1312, 728], [1515, 668], [1587, 818], [1641, 785], [1765, 733], [1806, 711]]
+        dst_pts = [[0, 0], [525, 330], [875, 330], [450, 630], [600, 630], [800, 630], [950, 630]]
+        analyzer.setup_calibration(src_pts, dst_pts)
+    elif base_name == "sample4":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        src_pts = [[402, 430], [1045, 398], [1300, 594], [500, 623]]
+        dst_pts = [[0, 0], [415, 0], [415, 200], [0, 200]]
+        analyzer.setup_calibration(src_pts, dst_pts)
+    elif base_name == "qample2":
+        print("\n[INFO] Applying Engineered Calibration for qample2.mp4...")
+        src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
+        dst_pts = [[0,0],[15,0],[0,60],[15,60],[865,0],[880,0],[865,60],[880,60],[0,150],[15,150],[0,210],[15,210],[865,150],[880,150],[865,210],[880,210]]
+        analyzer.setup_calibration(src_pts, dst_pts)
+    else:
+        print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
+
+    # 5. Point Detection
+    print("Detecting points...")
+    roi_target = rois[0]
+    roi_ref = rois[1]
+
+    pts_target = sampler.detect_roi_points_orb(frames[0], [roi_target], max_points=MAX_POINTS_TARGET)
+    pts_ref = sampler.detect_roi_points_orb(frames[0], [roi_ref], max_points=MAX_POINTS_REF)
+
+    print(f"Detected {len(pts_target)} Target points.")
+    print(f"Detected {len(pts_ref)} Reference points.")
+
+    if len(pts_target) == 0:
+        print("Error: No target points found.")
+        sys.exit(1)
+    if len(pts_ref) == 0:
+        print("Error: No reference points found. Cannot perform cancellation.")
+        sys.exit(1)
+
+    all_points = np.concatenate([pts_target, pts_ref], axis=0)
+    num_target = len(pts_target)
+
+    # 6. Tracking
+    print("Tracking video...")
+    tracks, visibilities = engine.track_video_chunked(frames, all_points, chunk_len=CHUNK_LEN, overlap=OVERLAP)
+    print(f"Tracking complete. Shape: {tracks.shape}")
+
+    tracks_target = tracks[:num_target]
+    tracks_ref = tracks[num_target:]
+
+    # 7. NO CANCELLATION: corrected tracks are the same as target tracks
+    corrected_tracks = tracks_target.copy()
+
+    # 8. Analyze & Visualize
+    print("Saving RAW results...")
+    analyzer.save_tracks(f"{base_name}_raw", tracks_target, fps)
+
+    print("Saving REFERENCE results...")
+    ref_track_path, _ = analyzer.save_tracks(f"{base_name}_reference", tracks_ref, fps)
+    print(f"Saved reference tracks to {ref_track_path}")
+
+    print("Saving CORRECTED results...")
+    npz_path, csv_path = analyzer.save_tracks(f"{base_name}_corrected", corrected_tracks, fps)
+    print(f"Saved corrected tracks to {npz_path}")
+
+    vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
+    from utils.visualizer import visualize_tracks_with_plot
+    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    print(f"Saved visualization to {vis_path}")
+
+    wave_path = analyzer.compute_and_save_waveform(f"{base_name}_corrected", corrected_tracks, fps)
+    print(f"Saved Corrected Waveform to {wave_path}")
+    ref_wave_path = analyzer.compute_and_save_waveform(f"{base_name}_reference", tracks_ref, fps)
+    print(f"Saved Reference Waveform to {ref_wave_path}")
+
+    print("\n--- Performing Advanced Analysis on Corrected Tracks ---")
+    double_wave_path = analyzer.compute_and_save_double_waveforms(f"{base_name}_corrected", corrected_tracks, fps)
+    print(f"Saved Double Waveform Plot (Corrected) to {double_wave_path}")
+
+    spec_path = analyzer.compute_and_save_spectrum(f"{base_name}_corrected", corrected_tracks, fps)
+    print(f"Saved Frequency Spectrum (Corrected) to {spec_path}")
+
+    intensity_results = analyzer.calculate_intensity(corrected_tracks, fps)
+    print(f"Intensity Analysis Complete for {base_name}.")
+
+    ref_path = os.path.join(out_dir, f"{base_name}_camera_motion.csv")
+    np.savetxt(ref_path, np.zeros((T,2)), delimiter=",", header="dx,dy", comments="")
+    print(f"Saved camera motion placeholder to {ref_path}")
+
+    print("\n[TIP] For advanced analysis (Intensity, Spectrum, etc.), run:")
+    print(f"python analyze_results.py {npz_path}")
+
+
+if __name__ == "__main__":
+    main()

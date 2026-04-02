@@ -390,11 +390,11 @@ def main():
     # Visualize (We visualize the RAW tracking to show *what* was tracked, 
     # but we might want to indicate which were target vs ref)
     # We can visualize all tracks.
-    vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
-    # Use the side-by-side visualizer: left = video with tracks, right = time/displacement plot
-    from utils.visualizer import visualize_tracks_with_plot
-    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
-    print(f"Saved visualization to {vis_path}")
+    # Visualization video generation is disabled per request.
+    # vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
+    # from utils.visualizer import visualize_tracks_with_plot
+    # visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    # print(f"Saved visualization to {vis_path}")
     
     # Compute Waveform on CORRECTED data
     wave_path = analyzer.compute_and_save_waveform(f"{base_name}_corrected", corrected_tracks, fps)

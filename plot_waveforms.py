@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 
 # 定义文件路径
-file_path = r'c:\Users\Administrator\Desktop\Princess\TheForge\Iron\output\032902_sample_output_cancel\sample_corrected_surface_waveform.csv'
+file_path = r'output\roi2_sample_output_cancel\sample_corrected_surface_waveform.csv'
 
 # 读取CSV文件
 try:
