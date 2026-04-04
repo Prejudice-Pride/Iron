@@ -15,8 +15,8 @@ from scipy.spatial.distance import euclidean, cosine
 # VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
 
 # qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\sample_p1_910.txt"
-VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_corrected_surface_waveform.csv"
+SEISMIC_TXT_PATH = r"txt_home\sample_p2_1301.txt"
+VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_raw_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
 # Camera visual axes mapped to Seismograph axes.
@@ -204,12 +204,8 @@ def main():
         return
         
     time_vis = vis_df['time'].values
-    raw_disp_vis_x = vis_df['mean_x'].values
-    raw_disp_vis_y = vis_df['mean_y'].values
-    
-    # Store raw signals for plotting before filtering alters their shapes
-    disp_vis_x = raw_disp_vis_x.copy()
-    disp_vis_y = raw_disp_vis_y.copy()
+    disp_vis_x = vis_df['mean_x'].values
+    disp_vis_y = vis_df['mean_y'].values
     
     # High-pass filter visual data just in case there's any slow drift
     disp_vis_x = highpass_filter(disp_vis_x - np.mean(disp_vis_x), HP_CUTOFF, VISUAL_FS)
@@ -227,9 +223,10 @@ def main():
 
     print("5. Aligning timelines & calculating correlation...")
     shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(disp_seis_x, disp_vis_x_100hz)
-    # 统一使用 x 轴的 shift 对 y 轴进行对齐
-    shift_y, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(disp_seis_y, disp_vis_y_100hz, forced_shift=shift_x)
-    # 让输出一致表述为 x 轴 shift
+    # y 轴严格使用 x 轴的 shift 进行对齐，确保 shift_y 与 shift_x 恒等
+    _, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(
+        disp_seis_y, disp_vis_y_100hz, forced_shift=shift_x
+    )
     shift_y = shift_x
 
     print("6. Computing FFT for Frequency Domain Analysis...")
@@ -282,55 +279,57 @@ def main():
     print(f"  - Frequency Error:           {f_err_y:.2f} %")
     print("="*50 + "\n")
 
-    print("7. Plotting visual full displacement and frequency spectrum...")
+    print("7. Plotting comparisons...")
+    # Change figure size to accommodate 4 subplots
     plt.figure(figsize=(16, 12))
     
-    # Compute FFT for the full physical visual tracking signal (using RAW signals)
-    freq_full_vis_x, amp_full_vis_x, peak_f_full_vis_x = compute_fft(raw_disp_vis_x, VISUAL_FS)
-    freq_full_vis_y, amp_full_vis_y, peak_f_full_vis_y = compute_fft(raw_disp_vis_y, VISUAL_FS)
+    # Timeline generation for aligned segment
+    t_plot_x = np.arange(len(ref_x)) * SEISMIC_DT
+    t_plot_y = np.arange(len(ref_y)) * SEISMIC_DT
 
-    # Plot 1: Visual Y-Axis Time Domain (Top, like cancel module)
+    # Plot 1: X-Axis Time Domain
     plt.subplot(4, 1, 1)
-    plt.title(f"Visual Y-Axis Full Displacement Waveform")
-    plt.plot(time_vis, raw_disp_vis_y, label="Mean Y Displacement", color='blue')
-    plt.ylabel("Displacement (cm)")
-    plt.xlabel("Time (s)")
-    plt.legend(loc="upper right")
-    plt.grid(True, linestyle='-', alpha=0.3)
-
-    # Plot 2: Visual X-Axis Time Domain (Bottom, like cancel module)
-    plt.subplot(4, 1, 2)
-    plt.title(f"Visual X-Axis Full Displacement Waveform")
-    plt.plot(time_vis, raw_disp_vis_x, label="Mean X Displacement", color='red')
-    plt.ylabel("Displacement (cm)")
-    plt.xlabel("Time (s)")
-    plt.legend(loc="upper right")
-    plt.grid(True, linestyle='-', alpha=0.3)
-
-    # Plot 3: Visual Y-Axis Frequency Domain
-    plt.subplot(4, 1, 3)
-    plt.title(f"Visual Y-Axis Frequency Spectrum | Dominant Freq: {peak_f_full_vis_y:.2f} Hz")
-    plt.plot(freq_full_vis_y, amp_full_vis_y, label=f"Visual Y ({peak_f_full_vis_y:.2f} Hz)", color='blue', alpha=0.8)
-    plt.xlim(0, 10)
-    plt.ylabel("Normalized Amp")
-    plt.xlabel("Frequency (Hz)")
+    plt.title(f"X-Axis Time Domain (Visual vs Seismometer {VISUAL_X_MAPS_TO}) | R: {r_x:.4f}")
+    plt.plot(t_plot_x, ref_x, label=f"Seismometer {VISUAL_X_MAPS_TO} (GT)", color='black', alpha=0.7)
+    plt.plot(t_plot_x, test_x, label="Visual Output X", color='blue', alpha=0.8, linestyle='--')
+    plt.ylabel("Z-Score (Disp)")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
-    
-    # Plot 4: Visual X-Axis Frequency Domain
-    plt.subplot(4, 1, 4)
-    plt.title(f"Visual X-Axis Frequency Spectrum | Dominant Freq: {peak_f_full_vis_x:.2f} Hz")
-    plt.plot(freq_full_vis_x, amp_full_vis_x, label=f"Visual X ({peak_f_full_vis_x:.2f} Hz)", color='red', alpha=0.8)
+
+    # Plot 2: Y-Axis Time Domain
+    plt.subplot(4, 1, 2)
+    plt.title(f"Y-Axis Time Domain (Visual vs Seismometer {VISUAL_Y_MAPS_TO}) | R: {r_y:.4f}")
+    plt.plot(t_plot_y, ref_y, label=f"Seismometer {VISUAL_Y_MAPS_TO} (GT)", color='black', alpha=0.7)
+    plt.plot(t_plot_y, test_y, label="Visual Output Y", color='red', alpha=0.8, linestyle='--')
+    plt.ylabel("Z-Score (Disp)")
+    plt.legend(loc="upper right")
+    plt.grid(True, linestyle=':', alpha=0.7)
+
+    # Plot 3: X-Axis Frequency Domain
+    plt.subplot(4, 1, 3)
+    plt.title(f"X-Axis Frequency Spectrum | Dominant Freq Error: {f_err_x:.2f}%")
+    plt.plot(freq_seis_x, amp_seis_x, label=f"Seis {VISUAL_X_MAPS_TO} ({peak_f_seis_x:.2f}Hz)", color='black', alpha=0.7)
+    plt.plot(freq_vis_x, amp_vis_x, label=f"Visual X ({peak_f_vis_x:.2f}Hz)", color='blue', alpha=0.8)
     plt.xlim(0, 10)  # Usually structural vibrations are < 10Hz
     plt.ylabel("Normalized Amp")
+    plt.legend(loc="upper right")
+    plt.grid(True, linestyle=':', alpha=0.7)
+
+    # Plot 4: Y-Axis Frequency Domain
+    plt.subplot(4, 1, 4)
+    plt.title(f"Y-Axis Frequency Spectrum | Dominant Freq Error: {f_err_y:.2f}%")
+    plt.plot(freq_seis_y, amp_seis_y, label=f"Seis {VISUAL_Y_MAPS_TO} ({peak_f_seis_y:.2f}Hz)", color='black', alpha=0.7)
+    plt.plot(freq_vis_y, amp_vis_y, label=f"Visual Y ({peak_f_vis_y:.2f}Hz)", color='red', alpha=0.8)
+    plt.xlim(0, 10)
     plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Normalized Amp")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
     plt.tight_layout()
-    out_img = "output/visual_full_waveform_with_fft.png"
+    out_img = "output/visual_vs_seismic_alignment_with_fft.png"
     plt.savefig(out_img, dpi=300)
-    print(f"Plot saved to {out_img}")
+    print(f"Comparison plot saved to {out_img}")
     plt.show()
 
 if __name__ == "__main__":

@@ -39,8 +39,8 @@ class CancelAnalyzer:
 
         # 核心改进：在绘图前对齐基准线 (Subtract mean offset) 
         # 确保三条曲线都从 0 附近开始，消除追踪初始位置差异导致的常数偏置
+        # 但是对 reference 不进行任何处理，以真实显示摄像机的位移
         disp_target_raw -= np.nanmean(disp_target_raw[:5], axis=0)
-        disp_ref -= np.nanmean(disp_ref[:5], axis=0)
         disp_target_corr -= np.nanmean(disp_target_corr[:5], axis=0)
 
         # 计算模长用于绘图
@@ -63,7 +63,7 @@ class CancelAnalyzer:
         # 添加标注：显示最大缩减量
         peak_reduction = np.max(mag_target_raw) - np.max(mag_target_corr)
         if peak_reduction > 0:
-            plt.annotate(f'Peak Reduction: {peak_reduction:.2f} px', 
+            plt.annotate(f'Peak Reduction: {peak_reduction:.2f} pixels', 
                          xy=(times[np.argmax(mag_target_raw)], np.max(mag_target_raw)),
                          xytext=(20, 20), textcoords='offset points',
                          arrowprops=dict(arrowstyle='->', color='black'))

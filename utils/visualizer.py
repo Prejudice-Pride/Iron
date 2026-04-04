@@ -159,16 +159,16 @@ def visualize_tracks_with_plot(frames, tracks, visibilities, out_path, fps, rois
         fig = Figure(figsize=(plot_width/100.0, H/100.0), dpi=100)
         canvas = FigureCanvas(fig)
         ax = fig.add_subplot(111)
-        ax.plot(times, mean_y, color='blue', alpha=0.3)
-        ax.plot(times[:t+1], mean_y[:t+1], color='blue')
+        ax.plot(times, mean_x, color='red', alpha=0.3)
+        ax.plot(times[:t+1], mean_x[:t+1], color='red')
         ax.set_xlabel('Time (s)')
-        ax.set_ylabel('Displacement Y (px)')
+        ax.set_ylabel('Displacement X (cm)')
         ax.grid(True, alpha=0.4)
-        ax.axvline(times[t], color='red', linestyle='--', linewidth=1)
+        ax.axvline(times[t], color='black', linestyle='--', linewidth=1)
         ax.set_xlim(times[0], times[-1] if len(times)>1 else 1)
         # autoscale y with a margin
-        ymin = np.nanmin(mean_y)
-        ymax = np.nanmax(mean_y)
+        ymin = np.nanmin(mean_x)
+        ymax = np.nanmax(mean_x)
         if np.isfinite(ymin) and np.isfinite(ymax):
             if ymin == ymax:
                 ymin -= 1

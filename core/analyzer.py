@@ -36,16 +36,20 @@ class Analyzer:
 
     def pixel_to_physical(self, tracks):
         """
-        Transform pixel tracks (N, T, 2) to physical mm tracks.
+        Transform pixel tracks (N, T, 2) to physical cm tracks.
+        (Note: Internally converts the calibrated output [which defaults to mm] to cm)
         """
         if self.homography_matrix is None:
-            return tracks * self.pixels_to_mm_fallback
+            # Fallback is assumed to be 10.0 mm/pixel, so we return in cm:
+            return (tracks * self.pixels_to_mm_fallback) / 10.0
             
         N, T, _ = tracks.shape
         # Reshape to (N*T, 1, 2) for cv2.perspectiveTransform
         reshaped_tracks = tracks.reshape(-1, 1, 2).astype(np.float32)
         import cv2
         phys_tracks = cv2.perspectiveTransform(reshaped_tracks, self.homography_matrix)
+        # Convert from mm (which dst_pts uses) to cm
+        phys_tracks = phys_tracks / 10.0
         return phys_tracks.reshape(N, T, 2)
 
     def save_tracks(self, base_name, tracks, fps):
@@ -106,13 +110,7 @@ class Analyzer:
             mean_x = np.nanmean(displacements_x, axis=1)
             median_x = np.nanmedian(displacements_x, axis=1)
 
-        # Baseline drift correction (Detrending)
-        from scipy.signal import detrend
-        if len(mean_y) > 0:
-            mean_y = detrend(np.nan_to_num(mean_y), type='linear')
-            mean_x = detrend(np.nan_to_num(mean_x), type='linear')
-            median_y = detrend(np.nan_to_num(median_y), type='linear')
-            median_x = detrend(np.nan_to_num(median_x), type='linear')
+        # (已移除 scipy detrend 去漂移逻辑，纯粹展示运动)
         
         # Save to CSV
         csv_path = os.path.join(self.output_dir, base_name + "_surface_waveform.csv")
@@ -221,8 +219,8 @@ class Analyzer:
         
         # Save Spectrum Data
         spec_csv_path = os.path.join(self.output_dir, base_name + "_spectrum.csv")
-        spec_data = np.column_stack((freqs, fft_y, fft_x))
-        header = "frequency,amplitude_y,amplitude_x"
+        spec_data = np.column_stack((freqs, fft_x, fft_y))
+        header = "frequency,amplitude_x,amplitude_y"
         np.savetxt(spec_csv_path, spec_data, delimiter=",", header=header, comments='', fmt="%.6f")
         
         # Plot Spectrum
@@ -230,35 +228,35 @@ class Analyzer:
         
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
         
-        # Plot Y Spectrum
-        ax1.plot(freqs, fft_y, 'b-', label='Y Spectrum')
-        ax1.set_title(f"Frequency Spectrum - Y (Vertical) | FPS={fps:.2f}")
+        # Plot X Spectrum (Top)
+        ax1.plot(freqs, fft_x, 'r-', label='X Spectrum')
+        ax1.set_title(f"Frequency Spectrum - X (Horizontal) | FPS={fps:.2f}")
         ax1.set_xlabel("Frequency (Hz)")
         ax1.set_ylabel("Amplitude")
         ax1.grid(True, alpha=0.5)
+        if len(freqs) > 1:
+            peak_idx_x = np.argmax(fft_x[1:]) + 1
+            peak_freq_x = freqs[peak_idx_x]
+            peak_amp_x = fft_x[peak_idx_x]
+            ax1.annotate(f'Peak: {peak_freq_x:.2f} Hz', 
+                         xy=(peak_freq_x, peak_amp_x), 
+                         xytext=(peak_freq_x, peak_amp_x * 1.1),
+                         arrowprops=dict(facecolor='black', shrink=0.05))
+
+        # Plot Y Spectrum (Bottom)
+        ax2.plot(freqs, fft_y, 'b-', label='Y Spectrum')
+        ax2.set_title(f"Frequency Spectrum - Y (Vertical) | FPS={fps:.2f}")
+        ax2.set_xlabel("Frequency (Hz)")
+        ax2.set_ylabel("Amplitude")
+        ax2.grid(True, alpha=0.5)
         # Annotate peak
         if len(freqs) > 1:
             peak_idx_y = np.argmax(fft_y[1:]) + 1 # ignore DC at index 0
             peak_freq_y = freqs[peak_idx_y]
             peak_amp_y = fft_y[peak_idx_y]
-            ax1.annotate(f'Peak: {peak_freq_y:.2f} Hz', 
+            ax2.annotate(f'Peak: {peak_freq_y:.2f} Hz', 
                          xy=(peak_freq_y, peak_amp_y), 
                          xytext=(peak_freq_y, peak_amp_y * 1.1),
-                         arrowprops=dict(facecolor='black', shrink=0.05))
-
-        # Plot X Spectrum
-        ax2.plot(freqs, fft_x, 'r-', label='X Spectrum')
-        ax2.set_title(f"Frequency Spectrum - X (Horizontal) | FPS={fps:.2f}")
-        ax2.set_xlabel("Frequency (Hz)")
-        ax2.set_ylabel("Amplitude")
-        ax2.grid(True, alpha=0.5)
-        if len(freqs) > 1:
-            peak_idx_x = np.argmax(fft_x[1:]) + 1
-            peak_freq_x = freqs[peak_idx_x]
-            peak_amp_x = fft_x[peak_idx_x]
-            ax2.annotate(f'Peak: {peak_freq_x:.2f} Hz', 
-                         xy=(peak_freq_x, peak_amp_x), 
-                         xytext=(peak_freq_x, peak_amp_x * 1.1),
                          arrowprops=dict(facecolor='black', shrink=0.05))
 
         plt.tight_layout()
@@ -270,7 +268,7 @@ class Analyzer:
     def compute_and_save_double_waveforms(self, base_name, tracks, fps):
         """
         Plot both X and Y average displacement waveforms.
-        Y is at the top because it's usually more critical.
+        X is at the top, Y is at the bottom.
         """
         # We reuse the logic to get mean_y and mean_x
         N, T, _ = tracks.shape
@@ -298,15 +296,15 @@ class Analyzer:
         
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
         
-        ax1.plot(times, mean_y, color='blue', label='Mean Y Displacement')
-        ax1.set_ylabel("Displacement Y (pixels)")
-        ax1.set_title(f"Waveform Analysis - {base_name}")
+        ax1.plot(times, mean_x, color='red', label='Mean X Displacement')
+        ax1.set_ylabel("Displacement X (cm)")
+        ax1.set_title(f"Waveform Analysis ")
         ax1.grid(True, alpha=0.3)
         ax1.legend(loc='upper right')
 
-        ax2.plot(times, mean_x, color='red', label='Mean X Displacement')
+        ax2.plot(times, mean_y, color='blue', label='Mean Y Displacement')
         ax2.set_xlabel("Time (s)")
-        ax2.set_ylabel("Displacement X (pixels)")
+        ax2.set_ylabel("Displacement Y (cm)")
         ax2.grid(True, alpha=0.3)
         ax2.legend(loc='upper right')
 
@@ -318,21 +316,18 @@ class Analyzer:
     def calculate_intensity(self, tracks, fps, pixels_to_mm=None):
         """
         理清烈度计算的全流程逻辑:
-        1. 轨迹映射：利用单应矩阵 (Homography) 或 比例尺将像素坐标还原为物理坐标 (mm)。
+        1. (已提前处理) 轨迹映射：外部已完成单应矩阵转换，输入 tracks 直接为物理坐标 (cm)。
         2. 信号集成：对 ROI 内多个追踪点进行鲁棒平均，获得物体中心运动信号。
-        3. 运动学推导：通过一阶和二阶数值微分获取速度 (mm/s) 和加速度 (mm/s^2)。
+        3. 运动学推导：通过一阶和二阶数值微分获取速度 (cm/s) 和加速度 (cm/s^2 即 Gal)。
         4. 特征峰值提取：利用滑动窗口技术捕捉峰值水平加速度 (PGA) 和峰值水平速度 (PGV)。
         5. 烈度评估：基于 GB/T 17742-2020 标准映射计算地震烈度。
         """
-        if pixels_to_mm is not None:
-             self.pixels_to_mm_fallback = pixels_to_mm
-
         N, T, _ = tracks.shape
         dt = 1.0 / fps
         
         # --- Step 1: 物理尺度恢复 (Scale Restoration) ---
-        # 如果有单应矩阵则执行透视变换，否则按 fallback 比例缩放
-        phys_tracks_all = self.pixel_to_physical(tracks) # 结果单位: mm
+        # 外部已经调用了 pixel_to_physical 转换为了 cm
+        phys_tracks_all = tracks # 结果单位: cm
         
         # --- Step 2: 信号集成 (Signal Aggregation) ---
         # 融合多个追踪点的位移，减少单点追踪噪声
@@ -347,11 +342,7 @@ class Analyzer:
         # 获取相对起始点的位移 (Relative Displacement)
         disp_mm = (mean_phys_tracks - mean_phys_tracks[0])
         
-        # --- Baseline drift correction: 强制去趋势修复基线漂移 ---
-        from scipy.signal import detrend
-        if len(disp_mm) > 2:
-            disp_mm[:, 0] = detrend(disp_mm[:, 0], type='linear')
-            disp_mm[:, 1] = detrend(disp_mm[:, 1], type='linear')
+        # (已移除 scipy detrend 强制去漂移逻辑，纯粹展示运动)
 
         # --- (Optional) Signal Smoothing: 应用低通滤波以抑制求导放大的高频噪声 ---
         
@@ -375,13 +366,13 @@ class Analyzer:
         disp_mm_smooth[:, 1] = lowpass_filter(disp_mm[:, 1], cutoff, fs=fps)
 
         # --- Step 3: 运动学推导 (Kinematics Calculation) ---
-        # 速度 v = ∆d / ∆t (mm/s)
+        # 速度 v = ∆d / ∆t (cm/s)
         vel = np.diff(disp_mm_smooth, axis=0) / dt
         # 再次滤波：消除一阶导数产生的噪声
         vel[:, 0] = lowpass_filter(vel[:, 0], cutoff, fs=fps)
         vel[:, 1] = lowpass_filter(vel[:, 1], cutoff, fs=fps)
         
-        # 加速度 a = ∆v / ∆t (mm/s^2)
+        # 加速度 a = ∆v / ∆t (cm/s^2 = Gal)
         acc = np.diff(vel, axis=0) / dt
         # 再次滤波：消除二阶导数极其严重的放大噪声
         acc[:, 0] = lowpass_filter(acc[:, 0], cutoff, fs=fps)
@@ -393,28 +384,28 @@ class Analyzer:
 
         # --- Step 4: 峰值特征提取 (Peak Feature Extraction) ---
         # 计算全序列的合成加速度和速度模长
-        acc_mags_all = np.sqrt(np.sum(acc**2, axis=1))
-        vel_mags_all = np.sqrt(np.sum(vel**2, axis=1))
+        acc_mags_all = np.sqrt(np.sum(acc**2, axis=1)) # cm/s^2 (Gal)
+        vel_mags_all = np.sqrt(np.sum(vel**2, axis=1)) # cm/s
 
         # 1. 传统峰值法 (Traditional PGA)
         # 采用 2.0 秒滑动窗口捕捉最大震动特征 (地震工程常用窗口)
         window_size = int(2.0 * fps)
         if window_size > T: window_size = T
         
-        max_pga = 0.0
-        max_pgv = 0.0
+        max_pga = 0.0 # cm/s^2 (Gal)
+        max_pgv = 0.0 # cm/s
         for i in range(T - window_size + 1):
             max_pga = max(max_pga, np.max(acc_mags_all[i : i + window_size]))
             max_pgv = max(max_pgv, np.max(vel_mags_all[i : i + window_size]))
         
         # 2. 统计百分位法 (Statistical P95 PGA)
         # 取第 95 百分位值，有效过滤单帧算法跳动带来的噪点
-        p95_pga = np.percentile(acc_mags_all, 95)
+        p95_pga = np.percentile(acc_mags_all, 95) # cm/s^2
 
         # 3. 阿里亚斯烈度 (Arias Intensity - Ia)
         # 物理意义：代表震动总能量的积分指标。Ia = (pi/2g) * integral(a^2 dt)
-        # 修正：将加速度从 mm/s^2 转换为 m/s^2 以符合标准国际单位制 (Standard units: m/s)
-        acc_m_s2 = acc_mags_all / 1000.0  # 1000 mm = 1 m
+        # 修正：将加速度从 cm/s^2 转换为 m/s^2 以符合标准国际单位制 (Standard units: m/s)
+        acc_m_s2 = acc_mags_all / 100.0  # 100 cm = 1 m
         g_m_s2 = 9.80665                  # 标准重力加速度 (m/s^2)
         
         # 积分计算 (单位为 m/s)
@@ -422,17 +413,17 @@ class Analyzer:
 
         # 4. 有效设计加速度 (Effective Design Acceleration)
         # 业内标准做法：取最大峰值的 75% 作为结构实际感受到的持续加速度
-        effective_pga = 0.75 * max_pga
+        effective_pga = 0.75 * max_pga # cm/s^2
 
         # --- Step 5: 烈度映射 (Intensity Mapping - GB/T 17742) ---
-        # PGA 单位转化: mm/s^2 -> Gal (cm/s^2)
-        pga_gal = max_pga / 10.0
-        pgv_cm_s = max_pgv / 10.0
+        # 此时已经均为 Gal (cm/s^2) 和 cm/s
+        pga_gal = max_pga
+        pgv_cm_s = max_pgv
         
         # 为四种方法分别计算烈度评估
         intensity_m1 = self._map_to_gbt17742(pga_gal, pgv_cm_s)
-        intensity_m2 = self._map_to_gbt17742(p95_pga / 10.0, 0) # 仅按加速度映射
-        intensity_m4 = self._map_to_gbt17742(effective_pga / 10.0, 0) # 仅按加速度映射
+        intensity_m2 = self._map_to_gbt17742(p95_pga, 0) # 仅按加速度映射
+        intensity_m4 = self._map_to_gbt17742(effective_pga, 0) # 仅按加速度映射
         
         # 针对 Arias Intensity (Ia)，采用学术界常用的经验转换（用于对比参考）
         # 注：Ia 为能量指标，此处将其映射到大致感知的烈度量级
@@ -491,13 +482,13 @@ class Analyzer:
         print("-" * 70)
         
         print(f"[方法 1] 传统峰值法 (PGA - Absolute Peak):")
-        print(f"   最大水平加速度: {max_pga:.2f} mm/s^2 ({pga_gal:.2f} Gal)")
-        print(f"   最大水平速度:   {max_pgv:.2f} mm/s ({pgv_cm_s:.2f} cm/s)")
+        print(f"   最大水平加速度: {max_pga:.2f} cm/s^2 ({pga_gal:.2f} Gal)")
+        print(f"   最大水平速度:   {max_pgv:.2f} cm/s")
         print(f"   >>> 评估烈度: {intensity} 度")
         print("-" * 40)
         
         print(f"[方法 2] 统计百分位法 (P95 Robust Peak):")
-        print(f"   P95 加速度:     {p95_pga:.2f} mm/s^2 ({p95_pga/10.0:.2f} Gal)")
+        print(f"   P95 加速度:     {p95_pga:.2f} cm/s^2 ({p95_pga:.2f} Gal)")
         print(f"   >>> 评估烈度: {intensity_m2} 度 (更具抗噪性)")
         print("-" * 40)
         
@@ -507,7 +498,7 @@ class Analyzer:
         # print("-" * 40)
         
         print(f"[方法 3] 有效设计加速度 (Effective Acceleration):")
-        print(f"   有效加速度:     {effective_pga:.2f} mm/s^2 ({effective_pga/10.0:.2f} Gal)")
+        print(f"   有效加速度:     {effective_pga:.2f} cm/s^2 ({effective_pga:.2f} Gal)")
         print(f"   >>> 评估烈度: {intensity_m4} 度 (结构设计实际感受)")
         
         print("="*70 + "\n")

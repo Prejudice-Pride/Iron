@@ -1,4 +1,4 @@
-"""
+﻿"""
 Seismic Surface Tracking with Reference Cancellation
 ===================================================
 
@@ -42,8 +42,8 @@ DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
-MAX_POINTS_TARGET = 10
-MAX_POINTS_REF = 10 
+MAX_POINTS_TARGET = 30
+MAX_POINTS_REF = 30 
 CHUNK_LEN = 150
 OVERLAP = 20
 
@@ -173,7 +173,7 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
         
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
             [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
         ]
@@ -186,7 +186,7 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
         
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
             [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
         ]
@@ -200,7 +200,7 @@ def main():
             [478, 482], [656, 478], [597, 436], [688, 393]
         ]
         
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
             [0, 0], [220, 600], [110, 270], [220, 600]
         ]
@@ -343,28 +343,31 @@ def main():
     final_cancellation = avg_camera_shift_smooth * cancel_weight_matrix[None, :]
     
     # 覆盖原变量以便于后续输出文件能够正确记录“最终真正被减掉”的有效位移
+    # 注意：此时 avg_camera_shift 是像素单位的相对位移量 [T, 2]
     avg_camera_shift = final_cancellation
     
-    # 将计算好的干净趋势，从目标追踪轨迹中减除
+    # 将计算好的干净趋势，从目标追踪轨迹中减除（此时完全在原始绝对像素坐标下）
     corrected_tracks = tracks_target - avg_camera_shift[None, :, :]
 
-    # --- E. 分段锚点去除漂移 (window anchor-based baseline reset) ---
-    def anchor_segment_detrend(tracks, window_frames=60):
-        # tracks: (N, T, 2)
-        N, T, C = tracks.shape
-        out = tracks.copy()
-        for start in range(0, T, window_frames):
-            end = min(start + window_frames, T)
-            segment = out[:, start:end, :]
-            # 以当前窗口中的点均值（X,Y）作为 anchor，用于去除偏移基线
-            base = np.nanmean(segment.reshape(-1, C), axis=0)  # (2,)
-            if np.isnan(base).any():
-                continue
-            out[:, start:end, :] = segment - base[None, None, :]
-        return out
+    # =========================================================
+    # APPLY HOMOGRAPHY CONVERSION FIRST (Absolute Pixel -> Absolute cm)
+    # =========================================================
+    print("Applying Homography Transformation: Converting absolute trajectories from pixels to cm...")
+    
+    # 先保存一份像素单位的参考位移图 (用于 CancelAnalyzer 绘图，避免非线性缩放导致幅值异常)
+    tracks_ref_px = tracks_ref.copy()
+    tracks_target_raw_px = tracks_target.copy()
+    
+    # 执行物理转换
+    tracks_target = analyzer.pixel_to_physical(tracks_target)
+    tracks_ref = analyzer.pixel_to_physical(tracks_ref)
+    corrected_tracks = analyzer.pixel_to_physical(corrected_tracks)
 
-    corrected_tracks = anchor_segment_detrend(corrected_tracks, window_frames=int(fps*2))
-    print("Cancellation module completed (and anchor-based segment detrend applied).")
+    # 计算物理空间下真正的参考位移轨迹 (用于保存 csv)
+    # 我们用 tracks_target (物理) - corrected_tracks (物理) 得到真正被减掉的 cm 数
+    avg_camera_shift_cm = np.nanmean(tracks_target - corrected_tracks, axis=0)
+
+    print("Cancellation module completed (Pure movement, detrending removed).")
 
     # 8. Analyze & Visualize
     
@@ -383,19 +386,26 @@ def main():
     print(f"Saved corrected tracks to {npz_path}")
 
     # Generate Triple Comparison Plot
-    print("Generating cancellation comparison chart (Triple Curves)...")
-    plot_path = c_analyzer.plot_comparison(base_name, tracks_target, tracks_ref, corrected_tracks, fps)
-    print(f"Saved triple cancellation analysis to {plot_path}")
+    # [关键修复]：要求绘图使用像素单位，这里传入像素轨迹
+    print("Generating cancellation comparison chart (Triple Curves in PIXELS)...")
+    # 我们需要构建像素单位的 corrected_tracks
+    corrected_tracks_px = tracks_target_raw_px - avg_camera_shift[None, :, :]
+    plot_path = c_analyzer.plot_comparison(base_name, tracks_target_raw_px, tracks_ref_px, corrected_tracks_px, fps)
+    print(f"Saved triple cancellation analysis (pixels) to {plot_path}")
 
     # Visualize (We visualize the RAW tracking to show *what* was tracked, 
     # but we might want to indicate which were target vs ref)
     # We can visualize all tracks.
     # Visualization video generation is disabled per request.
-    # vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
-    # from utils.visualizer import visualize_tracks_with_plot
-    # visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
-    # print(f"Saved visualization to {vis_path}")
+    vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
+    from utils.visualizer import visualize_tracks_with_plot
+    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    print(f"Saved visualization to {vis_path}")
     
+    # Compute Waveform on RAW data
+    raw_wave_path = analyzer.compute_and_save_waveform(f"{base_name}_raw", tracks_target, fps)
+    print(f"Saved Raw Waveform to {raw_wave_path}")
+
     # Compute Waveform on CORRECTED data
     wave_path = analyzer.compute_and_save_waveform(f"{base_name}_corrected", corrected_tracks, fps)
     print(f"Saved Corrected Waveform to {wave_path}")
@@ -424,8 +434,8 @@ def main():
 
     # Optional: Save reference motion itself
     ref_path = os.path.join(out_dir, f"{base_name}_camera_motion.csv")
-    np.savetxt(ref_path, avg_camera_shift, delimiter=",", header="dx,dy", comments="")
-    print(f"Saved estimated camera motion to {ref_path}")
+    np.savetxt(ref_path, avg_camera_shift_cm, delimiter=",", header="dx_cm,dy_cm", comments="")
+    print(f"Saved estimated camera motion in cm to {ref_path}")
 
     print("\n[TIP] For advanced analysis (Intensity, Spectrum, etc.), run:")
     print(f"python analyze_results.py {npz_path}")
