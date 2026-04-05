@@ -12,7 +12,7 @@ from utils.video_io import read_frames
 
 def main():
     parser = argparse.ArgumentParser(description="Homography Calibration Debugger")
-    parser.add_argument("video", nargs="?", default="../input_videos/qample2.mp4", help="Video path")
+    parser.add_argument("video", nargs="?", default="input_videos/pample2.mp4", help="Video path")
     args = parser.parse_args()
 
     # 1. 加载第一帧
@@ -60,9 +60,8 @@ def main():
     # [0, 150],]
     
     
-    src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
-    dst_pts = [[0,0],[15,0],[0,60],[15,60],[865,0],[880,0],[865,60],[880,60],[0,150],[15,150],[0,210],[15,210],[865,150],[880,150],[865,210],[880,210]]
-
+    src_pts = [[306, 854], [352, 856], [693, 880], [739, 884], [299, 785], [319, 772], [580, 604], [592, 596]]
+    dst_pts = [[40,0],[85,0],[355,0],[400,0],[0,60],[0,105],[0,585],[0,630]]
     # src_pts = [
     #     [835, 644],
     #     [1227, 628],

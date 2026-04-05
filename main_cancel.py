@@ -38,7 +38,7 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample.mp4"
+DEFAULT_VIDEO = "pample2.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -173,7 +173,7 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
         
-        # Destination Physical Coordinates (cm)
+        # Destination Physical Coordinates (mm)
         dst_calib = [
             [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
         ]
@@ -186,7 +186,7 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
         
-        # Destination Physical Coordinates (cm)
+        # Destination Physical Coordinates (mm)
         dst_calib = [
             [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
         ]
@@ -200,7 +200,7 @@ def main():
             [478, 482], [656, 478], [597, 436], [688, 393]
         ]
         
-        # Destination Physical Coordinates (cm)
+        # Destination Physical Coordinates (mm)
         dst_calib = [
             [0, 0], [220, 600], [110, 270], [220, 600]
         ]
@@ -233,6 +233,13 @@ def main():
         [0, 200],]
         
         analyzer.setup_calibration(src_pts, dst_pts)
+    elif base_name == "qample":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
+        dst_pts = [[0,0],[15,0],[75,15],[90,15],[0,90],[15,90],[75,105],[90,105],[0,150],[15,150],[75,165],[90,165]]
+
+        analyzer.setup_calibration(src_pts, dst_pts)
         
     elif base_name == "qample2":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
@@ -242,6 +249,13 @@ def main():
 
         analyzer.setup_calibration(src_pts, dst_pts)
         
+    elif base_name == "pample2":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[321, 847], [365, 850], [693, 878], [742, 883], [312, 780], [333, 767], [583, 605], [592, 597]]
+        dst_pts = [[40,0],[85,0],[355,0],[400,0],[0,60],[0,105],[0,585],[0,630]]
+
+        analyzer.setup_calibration(src_pts, dst_pts)
     else:
         print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
 

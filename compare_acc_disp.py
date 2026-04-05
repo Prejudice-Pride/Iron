@@ -15,8 +15,8 @@ from scipy.spatial.distance import euclidean, cosine
 # VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
 
 # qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\sample_p2_1301.txt"
-VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_raw_surface_waveform.csv"
+SEISMIC_TXT_PATH = r"txt_home\pample2_206a.txt"
+VISUAL_CSV_PATH = r"output\pample2_output_cancel\pample2_reference_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
 # Camera visual axes mapped to Seismograph axes.
@@ -31,8 +31,12 @@ VISUAL_X_MAPS_TO = 'NS'
 VISUAL_Y_MAPS_TO = 'WE'
 
 # qample.mp4
-# VISUAL_X_MAPS_TO = 'NS'
-# VISUAL_Y_MAPS_TO = 'WE'
+VISUAL_X_MAPS_TO = 'NS'
+VISUAL_Y_MAPS_TO = 'WE'
+
+# pample2.mp4
+VISUAL_X_MAPS_TO = 'NS'
+VISUAL_Y_MAPS_TO = 'WE'
 
 # qample2.mp4
 # VISUAL_X_MAPS_TO = 'SN'
@@ -49,6 +53,16 @@ VISUAL_FS = 25.0                     # 25 Hz from sample.mp4
 # Integration Filter Settings
 HP_CUTOFF = 0.5                      # High-pass filter cutoff (Hz) to remove baseline drift
 LP_CUTOFF = 5.0                      # Low-pass filter cutoff (Hz) to remove high-frequency tracking noise (毛刺)
+
+# Shift search range (seconds)
+# Set to None for no limits (search full signal)
+SHIFT_MIN_SEC = None
+SHIFT_MAX_SEC = None
+
+# Max evaluation duration (seconds)
+# Set to a fixed number (e.g., 15.0) to only compare N seconds after alignment, avoiding long noisy tails.
+# Set to None to use full overlapping duration.
+EVAL_DURATION_SEC = None
 
 # ================= Helper Functions =================
 def highpass_filter(data, cutoff, fs, order=4):
@@ -87,7 +101,7 @@ def double_integrate(acc, dt, cutoff, fs):
     
     return disp_filt
 
-def align_and_evaluate(ref_signal, test_signal, forced_shift=None):
+def align_and_evaluate(ref_signal, test_signal, forced_shift=None, shift_min=None, shift_max=None, eval_samples=None):
     """
     Synchronize two signals using cross-correlation and calculate metrics.
     Both signals must be at the same sampling rate.
@@ -100,7 +114,23 @@ def align_and_evaluate(ref_signal, test_signal, forced_shift=None):
     if forced_shift is None:
         # Cross-correlation to find time shift
         cc = correlate(ref_norm, test_norm, mode='full')
-        shift = np.argmax(cc) - (len(test_norm) - 1)
+        lags = np.arange(-(len(test_norm) - 1), len(ref_norm))
+
+        if shift_min is not None or shift_max is not None:
+            if shift_min is None:
+                shift_min = lags.min()
+            if shift_max is None:
+                shift_max = lags.max()
+
+            valid_mask = (lags >= shift_min) & (lags <= shift_max)
+            if not np.any(valid_mask):
+                raise ValueError(f"No valid shift found in range [{shift_min}, {shift_max}].")
+
+            cc_valid = cc[valid_mask]
+            lags_valid = lags[valid_mask]
+            shift = lags_valid[np.argmax(cc_valid)]
+        else:
+            shift = lags[np.argmax(cc)]
     else:
         shift = forced_shift
 
@@ -116,6 +146,9 @@ def align_and_evaluate(ref_signal, test_signal, forced_shift=None):
         
     # Trim to same length
     min_len = min(len(ref_aligned), len(test_aligned))
+    if eval_samples is not None:
+        min_len = min(min_len, eval_samples)
+        
     ref_aligned = ref_aligned[:min_len]
     test_aligned = test_aligned[:min_len]
     
@@ -222,10 +255,23 @@ def main():
     disp_vis_y_100hz = np.interp(time_seis, time_vis, disp_vis_y)
 
     print("5. Aligning timelines & calculating correlation...")
-    shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(disp_seis_x, disp_vis_x_100hz)
-    # y 轴严格使用 x 轴的 shift 进行对齐，确保 shift_y 与 shift_x 恒等
+    shift_min_samples = int(SHIFT_MIN_SEC * SEISMIC_FS) if SHIFT_MIN_SEC is not None else None
+    shift_max_samples = int(SHIFT_MAX_SEC * SEISMIC_FS) if SHIFT_MAX_SEC is not None else None
+    eval_samples = int(EVAL_DURATION_SEC * SEISMIC_FS) if EVAL_DURATION_SEC is not None else None
+
+    shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(
+        disp_seis_x,
+        disp_vis_x_100hz,
+        shift_min=shift_min_samples,
+        shift_max=shift_max_samples,
+        eval_samples=eval_samples,
+    )
+    # y 轴严格使用 x 轴的 shift 对齐
     _, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(
-        disp_seis_y, disp_vis_y_100hz, forced_shift=shift_x
+        disp_seis_y,
+        disp_vis_y_100hz,
+        forced_shift=shift_x,
+        eval_samples=eval_samples,
     )
     shift_y = shift_x
 
