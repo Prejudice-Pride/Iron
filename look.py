@@ -4,7 +4,7 @@ import os
 import json
 
 
-image_path = "input_videos\pample2.mp4"
+image_path = "input_videos\qample2.mp4"
 
 try:
     import sys
@@ -290,13 +290,15 @@ def select_lines_from_media(media_path):
 
 def main():
     
-    # points = select_coords_from_media(image_path)
-    # print("All selected points:", points)
     
     boxes = select_boxes_from_media(image_path)
     print("All selected boxes:", boxes)
     
     # lines = select_lines_from_media(image_path)
+    
+    
+    # points = select_coords_from_media(image_path)
+    # print("All selected points:", points)
 
 if __name__ == '__main__':
     main()

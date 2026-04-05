@@ -104,14 +104,8 @@ def load_calibration_by_video_name(video_path):
             "dst_pts_cm" : [[40,0],[85,0],[355,0],[400,0],[0,60],[0,105],[0,585],[0,630]]
         },
         "qample2": {
-            "src_pts": [[1123, 953], [1133, 951], [988, 810], [998, 809], 
-                        [1768, 833], [1773, 830], [1569, 759], [1574, 757], 
-                        [876, 687], [880, 686], [833, 642], [840, 642], 
-                        [1324, 667], [1327, 665], [1220, 627], [1224, 626]],
-            "dst_pts_cm": [[0,0],[15,0],[0,60],[15,60],
-                          [865,0],[880,0],[865,60],[880,60],
-                          [0,150],[15,150],[0,210],[15,210],
-                          [865,150],[880,150],[865,210],[880,210]]
+        "src_pts" : [[1124, 955], [1135, 953], [988, 809], [999, 808], [1573, 760], [1580, 758], [872, 686], [881, 686]],
+        "dst_pts_cm" : [[0,0],[5,0],[0,60],[5,60],[190,60],[195,60],[0,150],[5,150]]
         },
         "qample":{
             "src_pts": [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]],
@@ -179,8 +173,8 @@ def infer_track_units(tracks):
 
 def main():
     parser = argparse.ArgumentParser(description="Warp Video and Tracks Map to Physical Space")
-    parser.add_argument("--video", nargs="?", default="input_videos\pample2.mp4", help="Input video")
-    parser.add_argument("--tracks", nargs="?", default="output\pample2_output_cancel\pample2_raw_surface_tracks.npz", help="Track npz file")
+    parser.add_argument("--video", nargs="?", default="input_videos\qample2.mp4", help="Input video")
+    parser.add_argument("--tracks", nargs="?", default="output\qample2_output_cancel\qample2_raw_surface_tracks.npz", help="Track npz file")
     parser.add_argument("--output", nargs="?", default="output/birdseye_warp.avi", help="Output video path")
     args = parser.parse_args()
 

@@ -38,7 +38,7 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "pample2.mp4"
+DEFAULT_VIDEO = "qample2.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -245,14 +245,14 @@ def main():
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
-        dst_pts = [[0,0],[15,0],[0,60],[15,60],[865,0],[880,0],[865,60],[880,60],[0,150],[15,150],[0,210],[15,210],[865,150],[880,150],[865,210],[880,210]]
+        dst_pts = [[0, 0], [15, 0], [0, 60], [15, 60], [865, 0], [880, 0], [865, 60], [880, 60], [0, 150], [15, 150], [0, 210], [15, 210], [865, 150], [880, 150], [865, 210], [880, 210]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
         
     elif base_name == "pample2":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
-        src_pts = [[321, 847], [365, 850], [693, 878], [742, 883], [312, 780], [333, 767], [583, 605], [592, 597]]
+        src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
         dst_pts = [[40,0],[85,0],[355,0],[400,0],[0,60],[0,105],[0,585],[0,630]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
