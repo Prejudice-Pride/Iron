@@ -15,8 +15,8 @@ from scipy.spatial.distance import euclidean, cosine
 # VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
 
 # qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\pample2_1301.txt"
-VISUAL_CSV_PATH = r"output\pample2_output_cancel\pample2_corrected_surface_waveform.csv"
+SEISMIC_TXT_PATH = r"C:\Users\Administrator\Desktop\Princess\TheForge\Iron\txt_home\pample2_1301.txt"
+VISUAL_CSV_PATH = r"C:\Users\Administrator\Desktop\Princess\TheForge\Iron\best\pample2_0.8x_0.2y\pample2_output_cancel\pample2_raw_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
 # Camera visual axes mapped to Seismograph axes.

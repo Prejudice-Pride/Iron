@@ -4,7 +4,7 @@ import os
 import json
 
 
-image_path = "input_videos\qample2.mp4"
+image_path = "input_videos\sample.mp4"
 
 try:
     import sys

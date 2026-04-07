@@ -38,7 +38,7 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "qample2.mp4"
+DEFAULT_VIDEO = "qample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -94,12 +94,21 @@ def main():
     print(f"Frames: T={T}, HxW={W}x{H}, fps={fps}")
 
     # 3.a Attempt to load self-calibration parameters and apply to frames
-    calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
+    # Try video-specific calibration first, then fallback to global
+    calib_filename = f"{base_name}_distortion_params.json"
+    calib_path = os.path.join("output", "calibration_debug", calib_filename)
+    global_calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
+    
+    if not os.path.exists(calib_path) and os.path.exists(global_calib_path):
+        print(f"Specific calibration {calib_path} not found. Using global {global_calib_path}")
+        calib_path = global_calib_path
+
     if os.path.exists(calib_path):
         try:
             with open(calib_path, 'r', encoding='utf-8') as f:
                 calib = json.load(f)
             print(f"Found distortion params: {calib_path}. Applying correction...")
+            print(f"Distortion Data: {json.dumps(calib, indent=4)}")
             calib_obj = SelfCalibration()
             calib_obj.k3 = float(calib.get('k3', 0.0))
             calib_obj.k5 = float(calib.get('k5', 0.0))
@@ -237,7 +246,7 @@ def main():
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
-        dst_pts = [[0,0],[15,0],[75,15],[90,15],[0,90],[15,90],[75,105],[90,105],[0,150],[15,150],[75,165],[90,165]]
+        dst_pts = [[0,0],[5,0],[65,15],[70,15],[0,90],[5,90],[65,105],[75,105],[0,150],[5,150],[65,165],[70,165]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
         
@@ -412,8 +421,9 @@ def main():
     # We can visualize all tracks.
     # Visualization video generation is disabled per request.
     vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
-    from utils.visualizer import visualize_tracks_with_plot
-    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    from utils.visualizer import visualize_tracks
+    # 修改：使用 visualize_tracks (无折线图版本) 并增加颜色渲染逻辑
+    visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
     
     # Compute Waveform on RAW data

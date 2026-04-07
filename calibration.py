@@ -3,16 +3,71 @@ import sys
 import cv2
 import numpy as np
 import argparse
+import json
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def load_distortion_params(video_path):
+    base_name = os.path.splitext(os.path.basename(video_path))[0]
+    candidates = [
+        f"output/calibration_debug/{base_name}_distortion_params.json",
+        "output/calibration_debug/distortion_params.json"
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    return None
+
+
+def undistort_points_manual(pts, params, w, h):
+    if params is None:
+        return np.array(pts, dtype=np.float32)
+
+    cx, cy = params.get('cx', w / 2.0), params.get('cy', h / 2.0)
+    k3, k5 = params.get('k3', 0.0), params.get('k5', 0.0)
+    p1, p2 = params.get('p1', 0.0), params.get('p2', 0.0)
+
+    pts_np = np.array(pts, dtype=np.float32).reshape(-1, 2)
+    corrected = pts_np.copy()
+    for i, (x, y) in enumerate(pts_np):
+        dx, dy = x - cx, y - cy
+        r2 = dx * dx + dy * dy
+        radial = 1 + k3 * r2 + k5 * r2 * r2
+        tx = 2 * p1 * dx * dy + p2 * (r2 + 2 * dx * dx)
+        ty = p1 * (r2 + 2 * dy * dy) + 2 * p2 * dx * dy
+        corrected[i, 0] = cx + dx * radial + tx
+        corrected[i, 1] = cy + dy * radial + ty
+    return corrected
+
+
+def undistort_image_manual(img, params):
+    if params is None:
+        return img
+
+    h, w = img.shape[:2]
+    cx, cy = params.get('cx', w / 2.0), params.get('cy', h / 2.0)
+    k3, k5 = params.get('k3', 0.0), params.get('k5', 0.0)
+    p1, p2 = params.get('p1', 0.0), params.get('p2', 0.0)
+
+    xv, yv = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    dx, dy = xv - cx, yv - cy
+    r2 = dx * dx + dy * dy
+    radial = 1 + k3 * r2 + k5 * r2 * r2
+    tx = 2 * p1 * dx * dy + p2 * (r2 + 2 * dx * dx)
+    ty = p1 * (r2 + 2 * dy * dy) + 2 * p2 * dx * dy
+
+    map_x = (cx + dx * radial + tx).astype(np.float32)
+    map_y = (cy + dy * radial + ty).astype(np.float32)
+    return cv2.remap(img, map_x, map_y, cv2.INTER_LINEAR)
 
 from core.analyzer import Analyzer
 from utils.video_io import read_frames
 
 def main():
     parser = argparse.ArgumentParser(description="Homography Calibration Debugger")
-    parser.add_argument("video", nargs="?", default="input_videos/qample2.mp4", help="Video path")
+    parser.add_argument("video", nargs="?", default="input_videos/pample2.mp4", help="Video path")
     args = parser.parse_args()
 
     # 1. 加载第一帧
@@ -23,58 +78,48 @@ def main():
     frames, fps = read_frames(args.video)
     img = frames[0].copy()
     base_name = os.path.splitext(os.path.basename(args.video))[0]
+
+    distortion_params = load_distortion_params(args.video)
+    if distortion_params is not None:
+        print(f"[✓] Loaded distortion params for {base_name}. Applying image correction before calibration.")
+        img = undistort_image_manual(img, distortion_params)
+    else:
+        print(f"[!] No distortion params found for {base_name}. Proceeding without image correction.")
     
     # -------------------------------------------------------------
     # [关键配置] 请在这里输入你实际测量的像素坐标和物理坐标 (mm)
     # -------------------------------------------------------------
-    # src_pts: 视频画面中的像素 [x, y]
-    # [[297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [1433, 542], [888, 596]]
     
-    # 2026/3/21 新增:
-    # src_pts = [
-    # [1002, 544],
-    # [1375, 620],
-    # [1155, 925],
-    # [608, 717],]
+    # sample.mp4
+    src_pts = [
+            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [610, 719]
+        ]
+        
+        # Destination Physical Coordinates (mm)
+    dst_pts = [
+            [0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 210], [0,60]
+        ]
     
-    # src_pts = [
-    # [1002, 544],
-    # [1375, 620],
-    # [1155, 925],
-    # [608, 717],]
+    # qample.mp4
+    src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
+    dst_pts = [[0,0],[5,0],[65,15],[70,15],[0,90],[5,90],[65,105],[75,105],[0,150],[5,150],[65,165],[70,165]]
     
-    # dst_pts: 对应的物理空间坐标 [x_mm, y_mm]
-    # [[0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240], [0, 1500], [8800, 3300]]
-    
-    # 2026/3/21 新增：
-    # dst_pts = [
-    # [0, 0],
-    # [880, 0],
-    # [0, 150],
-    # [880, 150],]
-    
-    # dst_pts = [
-    # [0, 0],
-    # [880, 0],
-    # [880, 150],
-    # [0, 150],]
-    
-    
+    # qample2.mp4
     src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
     dst_pts = [[0, 0], [15, 0], [0, 60], [15, 60], [865, 0], [880, 0], [865, 60], [880, 60], [0, 150], [15, 150], [0, 210], [15, 210], [865, 150], [880, 150], [865, 210], [880, 210]]
 
-    # src_pts = [
-    #     [835, 644],
-    #     [1227, 628],
-    #     [1794, 837],
-    #     [1123, 955],
-    # ]
-    # dst_pts=[[0,0],[880,0],[0,210],[880,210]]
+    # pample2.mp4
+    src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
+    dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
+    
     print(f"\n[Step 1] Initializing Calibration for: {base_name}")
     analyzer = Analyzer(output_dir="output/calibration_debug")
     
     src_np = np.array(src_pts, dtype=np.float32)
     dst_np = np.array(dst_pts, dtype=np.float32)
+
+    if distortion_params is not None:
+        src_np = undistort_points_manual(src_np, distortion_params, img.shape[1], img.shape[0])
 
     # 2. 计算 Homography
     # 用 RANSAC 自动剔除错误点对，阈值设为 5 像素
@@ -135,11 +180,11 @@ def main():
     
     # 绘制 X 轴 (横向)
     cv2.arrowedLine(warped, tuple(origin_canvas), (origin_canvas[0] + 100, origin_canvas[1]), axis_color, 2, tipLength=0.3)
-    cv2.putText(warped, "X (mm)", (origin_canvas[0] + 110, origin_canvas[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, axis_color, 1)
+    cv2.putText(warped, "X (cm)", (origin_canvas[0] + 110, origin_canvas[1] + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, axis_color, 1)
     
     # 绘制 Y 轴 (纵向)
     cv2.arrowedLine(warped, tuple(origin_canvas), (origin_canvas[0], origin_canvas[1] + 100), axis_color, 2, tipLength=0.3)
-    cv2.putText(warped, "Y (mm)", (origin_canvas[0] - 20, origin_canvas[1] + 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, axis_color, 1)
+    cv2.putText(warped, "Y (cm)", (origin_canvas[0] - 20, origin_canvas[1] + 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, axis_color, 1)
 
     # 2. 绘制每一个标定点及其物理坐标标签
     for i, (c_pt, p_pt) in enumerate(zip(canvas_pts, dst_pts)):

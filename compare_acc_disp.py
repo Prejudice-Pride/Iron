@@ -15,8 +15,8 @@ from scipy.spatial.distance import euclidean, cosine
 # VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
 
 # qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\qample2_206b.txt"
-VISUAL_CSV_PATH = r"output\qample2_output_cancel\qample2_reference_surface_waveform.csv"
+SEISMIC_TXT_PATH = r"txt_home\pample2_206b.txt"
+VISUAL_CSV_PATH = r"output\pample2_output_cancel\pample2_corrected_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
 # Camera visual axes mapped to Seismograph axes.
@@ -30,17 +30,17 @@ VISUAL_Y_MAPS_TO = 'EW'
 VISUAL_X_MAPS_TO = 'NS'
 VISUAL_Y_MAPS_TO = 'WE'
 
-# qample.mp4
-VISUAL_X_MAPS_TO = 'NS'
-VISUAL_Y_MAPS_TO = 'WE'
+# # qample.mp4
+# VISUAL_X_MAPS_TO = 'NS'
+# VISUAL_Y_MAPS_TO = 'WE'
 
-# pample2.mp4
-VISUAL_X_MAPS_TO = 'NS'
-VISUAL_Y_MAPS_TO = 'WE'
+# # pample2.mp4
+# VISUAL_X_MAPS_TO = 'NS'
+# VISUAL_Y_MAPS_TO = 'WE'
 
-# qample2.mp4
-VISUAL_X_MAPS_TO = 'SN'
-VISUAL_Y_MAPS_TO = 'EW'
+# # qample2.mp4
+# VISUAL_X_MAPS_TO = 'SN'
+# VISUAL_Y_MAPS_TO = 'EW'
 
 # Seismometer specs
 SEISMIC_FS = 100.0                   # 100 Hz
@@ -62,7 +62,7 @@ SHIFT_MAX_SEC = None
 # Max evaluation duration (seconds)
 # Set to a fixed number (e.g., 15.0) to only compare N seconds after alignment, avoiding long noisy tails.
 # Set to None to use full overlapping duration.
-EVAL_DURATION_SEC = 3.5
+EVAL_DURATION_SEC = 5.0
 
 # ================= Helper Functions =================
 def highpass_filter(data, cutoff, fs, order=4):

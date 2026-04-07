@@ -40,14 +40,24 @@ def visualize_tracks(frames, tracks, visibilities, out_path, fps, rois=None):
         # Convert RGB to BGR for OpenCV drawing
         img = cv2.cvtColor(frames[t], cv2.COLOR_RGB2BGR)
         
-        # Draw ROIs
+        # Draw ROIs (Target=Red, Ref=Green)
         if rois:
-            for r in rois:
-                cv2.rectangle(img, (int(r[0]), int(r[1])), (int(r[2]), int(r[3])), (0, 255, 0), 2)
+            for i, r in enumerate(rois):
+                # 默认逻辑：第一个 ROI 是 Target (红)，后续是 Ref (绿)
+                color = (0, 0, 255) if i == 0 else (0, 255, 0)
+                cv2.rectangle(img, (int(r[0]), int(r[1])), (int(r[2]), int(r[3])), color, 2)
                 
         for i in range(N):
             pts = tracks[i]
             pts_vis = visibilities[i]
+            # 根据点所属的 ROI 设置颜色渲染 (Target红, Ref绿)
+            # 这里的 N = num_target + num_ref
+            # 注意：visualize_tracks 调用时已经通过 tracks 传入了所有点
+            # 下文将由调用方环境决定 num_target
+            # 为了简单通用，我们在 visualize_tracks 函数签名中允许传入点分配信息或通过调用约定
+            pass
+            # (暂时保持点渲染原有逻辑或在后续增加)
+            
             # Draw trails
             valid = ~np.isnan(pts[:t+1,0])
             if np.count_nonzero(valid) >= 2:

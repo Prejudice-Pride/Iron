@@ -173,8 +173,8 @@ def infer_track_units(tracks):
 
 def main():
     parser = argparse.ArgumentParser(description="Warp Video and Tracks Map to Physical Space")
-    parser.add_argument("--video", nargs="?", default="input_videos\qample2.mp4", help="Input video")
-    parser.add_argument("--tracks", nargs="?", default="output\qample2_output_cancel\qample2_raw_surface_tracks.npz", help="Track npz file")
+    parser.add_argument("--video", nargs="?", default="input_videos\sample.mp4", help="Input video")
+    parser.add_argument("--tracks", nargs="?", default="output\sample_output_cancel\sample_raw_surface_tracks.npz", help="Track npz file")
     parser.add_argument("--output", nargs="?", default="output/birdseye_warp.avi", help="Output video path")
     args = parser.parse_args()
 
