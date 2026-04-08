@@ -1,4 +1,5 @@
 import os
+import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,37 +11,23 @@ from scipy.spatial.distance import euclidean, cosine
 
 # ================= Configuration =================
 
-# qample.mp4
-# SEISMIC_TXT_PATH = r"txt_home/qample_trimed206b.txt"
-# VISUAL_CSV_PATH = r"output/qample_output_cancel/qample_corrected_surface_waveform.csv"
+# Setup Argument Parser for Automation
+parser = argparse.ArgumentParser(description="Evaluate visual tracking vs seismic data.")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p2_1301.txt", help="Path to ground truth seismic txt")
+parser.add_argument("--visual_csv", type=str, default=r"output\sample_output_cancel\sample_corrected_surface_waveform.csv", help="Path to visual tracking csv")
+parser.add_argument("--out_img", type=str, default="output/visual_vs_seismic_alignment_with_fft.png", help="Path to save output comparison image")
+parser.add_argument("--visual_x_maps_to", type=str, default="NS", help="Axis mapping")
+parser.add_argument("--visual_y_maps_to", type=str, default="WE", help="Axis mapping")
+args = parser.parse_args()
 
-# qample2.mp4
-SEISMIC_TXT_PATH = r"txt_home\sample_p2_1301.txt"
-VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_corrected_surface_waveform.csv"
+SEISMIC_TXT_PATH = args.seismic_txt
+VISUAL_CSV_PATH = args.visual_csv
+OUT_IMG_PATH = args.out_img
 
-# Axis Mapping (Camera's perspective vs Seismometer)
-# Camera visual axes mapped to Seismograph axes.
-# Options: 'NS' (North-South), 'SN' (South-North, -NS), 'EW' (East-West), 'WE' (West-East, -EW)
+# Default Maps
+VISUAL_X_MAPS_TO = args.visual_x_maps_to
+VISUAL_Y_MAPS_TO = args.visual_y_maps_to
 
-# Default
-VISUAL_X_MAPS_TO = 'NS'
-VISUAL_Y_MAPS_TO = 'EW'
-
-# sample.mp4
-VISUAL_X_MAPS_TO = 'NS'
-VISUAL_Y_MAPS_TO = 'WE'
-
-# # qample.mp4
-# VISUAL_X_MAPS_TO = 'NS'
-# VISUAL_Y_MAPS_TO = 'WE'
-
-# # pample2.mp4
-# VISUAL_X_MAPS_TO = 'NS'
-# VISUAL_Y_MAPS_TO = 'WE'
-
-# # qample2.mp4
-# VISUAL_X_MAPS_TO = 'SN'
-# VISUAL_Y_MAPS_TO = 'EW'
 
 # Seismometer specs
 SEISMIC_FS = 100.0                   # 100 Hz
@@ -373,10 +360,12 @@ def main():
     plt.grid(True, linestyle=':', alpha=0.7)
 
     plt.tight_layout()
-    out_img = "output/visual_vs_seismic_alignment_with_fft.png"
+    out_img = OUT_IMG_PATH
     plt.savefig(out_img, dpi=300)
     print(f"Comparison plot saved to {out_img}")
-    plt.show()
+    # OUTPUT_FOR_PARSE
+    print(f"__RESULT_R_X__: {r_x:.4f}")
+    # plt.show()  # Disable blocking show for automation
 
 if __name__ == "__main__":
     main()
