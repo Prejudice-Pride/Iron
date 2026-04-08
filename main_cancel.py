@@ -38,14 +38,14 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "qample.mp4"
+DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
 MAX_POINTS_TARGET = 30
 MAX_POINTS_REF = 30 
 CHUNK_LEN = 150
-OVERLAP = 20
+OVERLAP = 10
 
 def main():
     parser = argparse.ArgumentParser(description="Seismic Surface Tracker with Reference Cancellation")
@@ -177,17 +177,16 @@ def main():
     # ---------------------------------------------------------
     if base_name == "sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
-        # Source Pixels (Extracted manually)
-        src_calib = [
-            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
-        ]
+        src_pts = [
+                [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [610, 719]
+            ]
+            
+            # Destination Physical Coordinates (mm)
+        dst_pts = [
+                [0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 210], [0,60]
+            ]
         
-        # Destination Physical Coordinates (mm)
-        dst_calib = [
-            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
-        ]
-        
-        analyzer.setup_calibration(src_calib, dst_calib)
+        analyzer.setup_calibration(src_pts, dst_pts)
     elif base_name == "old_sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)

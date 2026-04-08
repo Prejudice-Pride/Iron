@@ -67,7 +67,7 @@ from utils.video_io import read_frames
 
 def main():
     parser = argparse.ArgumentParser(description="Homography Calibration Debugger")
-    parser.add_argument("video", nargs="?", default="input_videos/pample2.mp4", help="Video path")
+    parser.add_argument("video", nargs="?", default="input_videos/sample.mp4", help="Video path")
     args = parser.parse_args()
 
     # 1. 加载第一帧
