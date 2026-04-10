@@ -218,9 +218,8 @@ def main():
     elif base_name == "sample3":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
-        src_pts = [[435, 753], [1312, 728], [1515, 668], [1587, 818], [1641, 785], [1765, 733], [1806, 711]]
-        
-        dst_pts = [[0,0],[525,330],[875,330],[450,630],[600,630],[800,630],[950,630]]
+        src_pts = [[438, 751], [809, 665], [1036, 611], [1218, 568], [1313, 729], [876, 908]]
+        dst_pts = [[0,0],[250,0],[500,0],[750,0],[375,100],[0,100]]
         
         analyzer.setup_calibration(src_pts, dst_pts)
         

@@ -8,29 +8,14 @@ import datetime
 from pathlib import Path
 
 # CONFIGURATION
-# 正在运行的视频文件名（不含扩展名）
-# 脚本将自动寻找：
-# 1. 视频文件: {BASE_NAME}.mp4
-# 2. 真值文件: txt_home/{BASE_NAME}_*.txt
-# 3. ROI 文件: rois/{BASE_NAME}_cancel_rois.json
-BASE_NAME = "pample2"
-
-VIDEO_FILE = f"{BASE_NAME}.mp4"
+BASE_NAME = "sample3" # Needs to match the video/files you want, e.g., "sample", "sample_p2"
+VIDEO_FILE = f"{BASE_NAME}.mp4" 
+VISUAL_CSV = f"output/{BASE_NAME}_output_cancel/{BASE_NAME}_corrected_surface_waveform.csv"
 OUTPUT_DIR_NAME = f"{BASE_NAME}_output_cancel"
-CSV_SUFFIX = "corrected_surface_waveform.csv"
 TARGET_ROI_JSON = f"rois/{BASE_NAME}_cancel_rois.json"
 
-def get_seismic_files(base_name):
-    """自动搜索 txt_home 目录下所有匹配该视频的真值文件"""
-    txt_home = Path("txt_home")
-    if not txt_home.exists():
-        return []
-    # 匹配规则：{base_name}_*.txt (例如 sample_p2_1301.txt)
-    return [str(f) for f in txt_home.glob(f"{base_name}_*.txt")]
-
-SEISMIC_FILES = get_seismic_files(BASE_NAME)
-if not SEISMIC_FILES:
-    print(f"⚠️ 警告: 在 txt_home 中未找到 {BASE_NAME} 的真值文件！")
+# 自动在 txt_home 目录中查找所有以 BASE_NAME 开头的 txt 文件
+SEISMIC_FILES = [str(p).replace('\\', '/') for p in Path("txt_home").glob(f"{BASE_NAME}_*.txt")]
 
 # Random Search Constraints
 MAX_X = 1920 # Feel free to change based on actual video size
@@ -89,42 +74,66 @@ def run_main_cancel():
     return True
 
 def run_evaluation():
-    best_loc_r = -1.0
+    best_loc_r_x = -1.0
+    best_loc_r_y = -1.0
     best_txt = ""
+    best_freq_err_x = 100.0  # Initialize to high value
+    best_freq_err_y = 100.0  # Initialize to high value
 
-    visual_csv_path = Path(f"output/{OUTPUT_DIR_NAME}/{BASE_NAME}_{CSV_SUFFIX}")
+    visual_csv_path = Path(f"output/{OUTPUT_DIR_NAME}/{BASE_NAME}_corrected_surface_waveform.csv")
     if not visual_csv_path.exists():
         print(f"File not found: {visual_csv_path}")
-        return None, None
+        return None, None, None, None, None
 
     for txt_path in SEISMIC_FILES:
         out_img_path = Path(f"output/{OUTPUT_DIR_NAME}/alignment_{Path(txt_path).stem}.png")
         
-        # compare_acc_disp.py 会自动从 CSV 文件名检测坐标映射关系
         cmd = [
             "python", "compare_acc_disp.py",
             "--seismic_txt", str(txt_path),
             "--visual_csv", str(visual_csv_path),
             "--out_img", str(out_img_path)
+            # You can also pass visual maps here if needed
         ]
         
         res = subprocess.run(cmd, capture_output=True, text=True)
-        r_val = -1.0
-        # Parse Pearson r from output
-        for line in res.stdout.split('\n'):
-            if line.startswith("__RESULT_R_X__:"):
-                r_val = float(line.split(":")[1].strip())
+        r_val_x = -1.0
+        r_val_y = -1.0
+        freq_err_x_val = 100.0
+        freq_err_y_val = 100.0
+        # Parse Pearson r and frequency errors from output
+        for line in res.stdout.replace('\r', '\n').split('\n'):
+            if "__RESULT_R_X__:" in line:
+                idx = line.find("__RESULT_R_X__:")
+                r_val_x = float(line[idx:].split(":")[1].strip())
+            if "__RESULT_R_Y__:" in line:
+                idx = line.find("__RESULT_R_Y__:")
+                r_val_y = float(line[idx:].split(":")[1].strip())
+            if "__RESULT_FREQ_ERR_X__:" in line:
+                idx = line.find("__RESULT_FREQ_ERR_X__:")
+                freq_err_x_val = float(line[idx:].split(":")[1].strip())
+            if "__RESULT_FREQ_ERR_Y__:" in line:
+                idx = line.find("__RESULT_FREQ_ERR_Y__:")
+                freq_err_y_val = float(line[idx:].split(":")[1].strip())
         
-        print(f"  -> Evaluated vs {Path(txt_path).name}: R = {r_val}")
-        if r_val > best_loc_r:
-            best_loc_r = r_val
+        if r_val_x == -1.0:
+            print(f"Error evaluating {txt_path}. Stderr: {res.stderr[:200]}")
+            
+        print(f"  -> Evaluated vs {Path(txt_path).name}: R_X = {r_val_x}, R_Y = {r_val_y}, Freq Err X = {freq_err_x_val}%, Y = {freq_err_y_val}%")
+        if r_val_x > best_loc_r_x:
+            best_loc_r_x = r_val_x
+            best_loc_r_y = r_val_y
+            best_freq_err_x = freq_err_x_val
+            best_freq_err_y = freq_err_y_val
             best_txt = txt_path
             
-    return best_loc_r, best_txt
+    return best_loc_r_x, best_loc_r_y, best_txt, best_freq_err_x, best_freq_err_y
 
-def save_best_results(best_r, best_txt, rois):
+def save_best_results(best_r_x, best_r_y, best_txt, best_freq_err_x, best_freq_err_y, rois):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    best_dir = Path("best") / timestamp
+    # Folder name: timestamp + {rx} + {ry} + {freq_err_x}% + {freq_err_y}%
+    folder_name = f"{timestamp}_{best_r_x:.4f}_{best_r_y:.4f}_{best_freq_err_x:.2f}%_{best_freq_err_y:.2f}%"
+    best_dir = Path("best") / folder_name
     best_dir.mkdir(parents=True, exist_ok=True)
     
     # 1. Save ROI
@@ -138,7 +147,10 @@ def save_best_results(best_r, best_txt, rois):
     # 3. Summary
     summary = {
         "video": VIDEO_FILE,
-        "best_r_x": best_r,
+        "best_r_x": best_r_x,
+        "best_r_y": best_r_y,
+        "best_freq_err_x": best_freq_err_x,
+        "best_freq_err_y": best_freq_err_y,
         "matched_with": best_txt,
         "rois": rois,
         "iteration_time": timestamp
@@ -146,7 +158,7 @@ def save_best_results(best_r, best_txt, rois):
     with open(best_dir / "summary.json", 'w') as f:
         json.dump(summary, f, indent=4)
         
-    print(f"✅ Success! R={best_r} > {R_THRESHOLD}. Results saved to: {best_dir}")
+    print(f"✅ Success! R_X={best_r_x}, Freq Err X={best_freq_err_x}%, Y={best_freq_err_y}%. Results saved to: {best_dir}")
 
 def main():
     print("🚀 Starting Automated ROI Search (Hill Climbing)...")
@@ -166,14 +178,14 @@ def main():
     print("\n--- Iteration 0 (Initial Base) ---")
     write_rois(TARGET_ROI_JSON, current_best_rois)
     if run_main_cancel():
-        r, txt = run_evaluation()
-        if r is not None:
-            print(f"Base ROI Max R: {r}")
-            current_best_r = r
-            if r > R_THRESHOLD:
-                save_best_results(r, txt, current_best_rois)
-                print("Good result found immediately. Exiting.")
-                return
+        rx, ry, txt, freq_err_x, freq_err_y = run_evaluation()
+        if rx is not None:
+            print(f"Base ROI Max R_X: {rx}, R_Y: {ry}, Freq Err X: {freq_err_x}%, Y: {freq_err_y}%")
+            current_best_r = rx
+            if rx > R_THRESHOLD:
+                # Found a good match, but keep searching for potentially better ROIs.
+                save_best_results(rx, ry, txt, freq_err_x, freq_err_y, current_best_rois)
+                print("Good result found immediately. Saving result and continuing search.")
     
     for i in range(1, MAX_ITERS + 1):
         print(f"\n--- Iteration {i} ---")
@@ -189,18 +201,18 @@ def main():
         if not run_main_cancel():
             continue
             
-        r, txt = run_evaluation()
-        if r is not None:
-            print(f"Iter {i} Max R: {r} (vs {txt})")
-            if r > current_best_r:
-                print(f"🔥 New Local Best R! {r} > {current_best_r}")
-                current_best_r = r
+        rx, ry, txt, freq_err_x, freq_err_y = run_evaluation()
+        if rx is not None:
+            print(f"Iter {i} Max R_X: {rx} (vs {txt}), Freq Err X: {freq_err_x}%, Y: {freq_err_y}%")
+            if rx > current_best_r:
+                print(f"🔥 New Local Best R! {rx} > {current_best_r}")
+                current_best_r = rx
                 current_best_rois = test_rois
                 
-            if r > R_THRESHOLD:
-                save_best_results(r, txt, test_rois)
-                print("Target R threshold reached. Execution Finished.")
-                break
+            if rx > R_THRESHOLD:
+                # Found high enough correlation; save it but do not stop the iterative search.
+                save_best_results(rx, ry, txt, freq_err_x, freq_err_y, test_rois)
+                print("Target R threshold reached. Saving result and continuing search...")
 
 if __name__ == "__main__":
     main()

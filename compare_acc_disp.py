@@ -21,8 +21,8 @@ VIDEO_AXIS_CONFIGS = {
 
 # Setup Argument Parser for Automation
 parser = argparse.ArgumentParser(description="Evaluate visual tracking vs seismic data.")
-parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p2_1301.txt", help="Path to ground truth seismic txt")
-parser.add_argument("--visual_csv", type=str, default=r"output\sample_output_cancel\sample_corrected_surface_waveform.csv", help="Path to visual tracking csv")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home\pample2_1301.txt", help="Path to ground truth seismic txt")
+parser.add_argument("--visual_csv", type=str, default=r"best\pample2_0.8x_0.2y\pample2_output_cancel\pample2_corrected_surface_waveform.csv", help="Path to visual tracking csv")
 parser.add_argument("--out_img", type=str, default="output/visual_vs_seismic_alignment_with_fft.png", help="Path to save output comparison image")
 parser.add_argument("--visual_x_maps_to", type=str, default=None, help="Axis mapping for X (optional, auto-detected from filename if not provided)")
 parser.add_argument("--visual_y_maps_to", type=str, default=None, help="Axis mapping for Y (optional, auto-detected from filename if not provided)")
@@ -420,6 +420,8 @@ def main():
     # OUTPUT_FOR_PARSE
     print(f"__RESULT_R_X__: {r_x:.4f}")
     print(f"__RESULT_R_Y__: {r_y:.4f}")
+    print(f"__RESULT_FREQ_ERR_X__: {f_err_x:.2f}")
+    print(f"__RESULT_FREQ_ERR_Y__: {f_err_y:.2f}")
     # plt.show()  # Disable blocking show for automation
 
 if __name__ == "__main__":

@@ -19,9 +19,9 @@ VIDEO_AXIS_CONFIGS = {
 }
 
 parser = argparse.ArgumentParser(description="Ablation study: Evaluate corrected vs raw tracking.")
-parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p1_910.txt")
-parser.add_argument("--corrected_csv", type=str, default=r"best\sample_p1_0.8848x_0.46y\sample_output_cancel\sample_raw_surface_waveform.csv")
-parser.add_argument("--raw_csv", type=str, default=r"output\sample_output_cancel\sample_raw_surface_waveform.csv")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home\pample2_1301.txt")
+parser.add_argument("--corrected_csv", type=str, default=r"best\pample2_0.8x_0.2y\pample2_output_cancel\pample2_corrected_surface_waveform.csv")
+parser.add_argument("--raw_csv", type=str, default=r"best\pample2_0.8x_0.2y\pample2_output_cancel\pample2_raw_surface_waveform.csv")
 parser.add_argument("--out_img", type=str, default="output/ablation_visual_vs_seismic.png")
 parser.add_argument("--visual_x_maps_to", type=str, default=None)
 parser.add_argument("--visual_y_maps_to", type=str, default=None)
@@ -52,7 +52,7 @@ HP_CUTOFF = 0.5
 LP_CUTOFF = 5.0
 SHIFT_MIN_SEC, SHIFT_MAX_SEC = None, None
 EVAL_DURATION_SEC = 5.0
-MIN_EVAL_DURATION_SEC = 0.0
+MIN_EVAL_DURATION_SEC = 3.5
 
 # ================= Helper Functions =================
 def highpass_filter(data, cutoff, fs, order=4):

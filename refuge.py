@@ -65,8 +65,8 @@ def transform_tracks_to_waveform(input_csv, output_csv, fps=25.0):
 # 使用示例
 if __name__ == "__main__":
     # 修改以下路径为你实际的文件路径
-    input_file = r"best\sample_p1_0.8848x_0.46y\sample_output_cancel\sample_reference_surface_tracks.csv"
-    output_file = r"best\sample_p1_0.8848x_0.46y\sample_output_cancel\sample_raw_surface_waveform.csv"
+    input_file = r"best\pample2_0.8x_0.2y\pample2_output_cancel\pample2_raw_surface_tracks.csv"
+    output_file = r"best\pample2_0.8x_0.2y\pample2_output_cancel\pample2_raw_surface_waveform.csv"
     
     # 如果你的视频不是 25 帧，请修改 fps
     transform_tracks_to_waveform(input_file, output_file, fps=25.0)
