@@ -8,19 +8,29 @@ import datetime
 from pathlib import Path
 
 # CONFIGURATION
-VIDEO_FILE = "sample_p2.mp4" # Please change to the real video if different, "sample.mp4", "sample_p2.mp4" etc
-VISUAL_CSV = r"output\sample_p2_output_cancel\sample_p2_corrected_surface_waveform.csv" # Depends on video name
-OUTPUT_DIR_NAME = "sample_p2_output_cancel" # Depends on video base_name 
-BASE_NAME = "sample_p2" # Needs to match the video you want
+# 正在运行的视频文件名（不含扩展名）
+# 脚本将自动寻找：
+# 1. 视频文件: {BASE_NAME}.mp4
+# 2. 真值文件: txt_home/{BASE_NAME}_*.txt
+# 3. ROI 文件: rois/{BASE_NAME}_cancel_rois.json
+BASE_NAME = "pample2"
+
+VIDEO_FILE = f"{BASE_NAME}.mp4"
+OUTPUT_DIR_NAME = f"{BASE_NAME}_output_cancel"
+CSV_SUFFIX = "corrected_surface_waveform.csv"
 TARGET_ROI_JSON = f"rois/{BASE_NAME}_cancel_rois.json"
 
-SEISMIC_FILES = [
-    r"txt_home\sample_p2_206a.txt",
-    r"txt_home\sample_p2_206b.txt",
-    r"txt_home\sample_p2_901.txt",
-    r"txt_home\sample_p2_910.txt",
-    r"txt_home\sample_p2_1301.txt",
-]
+def get_seismic_files(base_name):
+    """自动搜索 txt_home 目录下所有匹配该视频的真值文件"""
+    txt_home = Path("txt_home")
+    if not txt_home.exists():
+        return []
+    # 匹配规则：{base_name}_*.txt (例如 sample_p2_1301.txt)
+    return [str(f) for f in txt_home.glob(f"{base_name}_*.txt")]
+
+SEISMIC_FILES = get_seismic_files(BASE_NAME)
+if not SEISMIC_FILES:
+    print(f"⚠️ 警告: 在 txt_home 中未找到 {BASE_NAME} 的真值文件！")
 
 # Random Search Constraints
 MAX_X = 1920 # Feel free to change based on actual video size
@@ -82,7 +92,7 @@ def run_evaluation():
     best_loc_r = -1.0
     best_txt = ""
 
-    visual_csv_path = Path(f"output/{OUTPUT_DIR_NAME}/{BASE_NAME}_corrected_surface_waveform.csv")
+    visual_csv_path = Path(f"output/{OUTPUT_DIR_NAME}/{BASE_NAME}_{CSV_SUFFIX}")
     if not visual_csv_path.exists():
         print(f"File not found: {visual_csv_path}")
         return None, None
@@ -90,12 +100,12 @@ def run_evaluation():
     for txt_path in SEISMIC_FILES:
         out_img_path = Path(f"output/{OUTPUT_DIR_NAME}/alignment_{Path(txt_path).stem}.png")
         
+        # compare_acc_disp.py 会自动从 CSV 文件名检测坐标映射关系
         cmd = [
             "python", "compare_acc_disp.py",
             "--seismic_txt", str(txt_path),
             "--visual_csv", str(visual_csv_path),
             "--out_img", str(out_img_path)
-            # You can also pass visual maps here if needed
         ]
         
         res = subprocess.run(cmd, capture_output=True, text=True)

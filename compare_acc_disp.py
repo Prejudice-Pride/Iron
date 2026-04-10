@@ -11,22 +11,65 @@ from scipy.spatial.distance import euclidean, cosine
 
 # ================= Configuration =================
 
+# Video axis mapping configurations based on video name
+VIDEO_AXIS_CONFIGS = {
+    "sample": {"x_map": "NS", "y_map": "WE"},
+    "qample": {"x_map": "NS", "y_map": "WE"},
+    "pample2": {"x_map": "NS", "y_map": "WE"},
+    "qample2": {"x_map": "SN", "y_map": "EW"},
+}
+
 # Setup Argument Parser for Automation
 parser = argparse.ArgumentParser(description="Evaluate visual tracking vs seismic data.")
 parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p2_1301.txt", help="Path to ground truth seismic txt")
 parser.add_argument("--visual_csv", type=str, default=r"output\sample_output_cancel\sample_corrected_surface_waveform.csv", help="Path to visual tracking csv")
 parser.add_argument("--out_img", type=str, default="output/visual_vs_seismic_alignment_with_fft.png", help="Path to save output comparison image")
-parser.add_argument("--visual_x_maps_to", type=str, default="NS", help="Axis mapping")
-parser.add_argument("--visual_y_maps_to", type=str, default="WE", help="Axis mapping")
+parser.add_argument("--visual_x_maps_to", type=str, default=None, help="Axis mapping for X (optional, auto-detected from filename if not provided)")
+parser.add_argument("--visual_y_maps_to", type=str, default=None, help="Axis mapping for Y (optional, auto-detected from filename if not provided)")
 args = parser.parse_args()
 
 SEISMIC_TXT_PATH = args.seismic_txt
 VISUAL_CSV_PATH = args.visual_csv
 OUT_IMG_PATH = args.out_img
 
-# Default Maps
-VISUAL_X_MAPS_TO = args.visual_x_maps_to
-VISUAL_Y_MAPS_TO = args.visual_y_maps_to
+def get_video_name_from_path(path):
+    """Extract video name (without extension) from path."""
+    import os
+    filename = os.path.basename(path)
+    return os.path.splitext(filename)[0]
+
+def auto_detect_axis_mapping(csv_path, x_override=None, y_override=None):
+    """
+    Auto-detect axis mapping based on CSV filename.
+    If x_override or y_override are provided, use those instead.
+    """
+    video_name = get_video_name_from_path(csv_path)
+    
+    # Try to find matching config
+    detected_x, detected_y = "NS", "WE"  # Default fallback
+    
+    for video_key, mapping in VIDEO_AXIS_CONFIGS.items():
+        if video_key.lower() in video_name.lower():
+            detected_x = mapping["x_map"]
+            detected_y = mapping["y_map"]
+            print(f"✓ Auto-detected axis mapping from video '{video_name}': X→{detected_x}, Y→{detected_y}")
+            break
+    
+    # Override with command-line args if provided
+    final_x = x_override if x_override is not None else detected_x
+    final_y = y_override if y_override is not None else detected_y
+    
+    if x_override is not None or y_override is not None:
+        print(f"  (Command-line override applied)")
+    
+    return final_x, final_y
+
+# Auto-detect or use provided mappings
+VISUAL_X_MAPS_TO, VISUAL_Y_MAPS_TO = auto_detect_axis_mapping(
+    VISUAL_CSV_PATH,
+    x_override=args.visual_x_maps_to,
+    y_override=args.visual_y_maps_to
+)
 
 
 # Seismometer specs
@@ -49,7 +92,8 @@ SHIFT_MAX_SEC = None
 # Max evaluation duration (seconds)
 # Set to a fixed number (e.g., 15.0) to only compare N seconds after alignment, avoiding long noisy tails.
 # Set to None to use full overlapping duration.
-EVAL_DURATION_SEC = 5.0
+EVAL_DURATION_SEC = 6.0
+MIN_EVAL_DURATION_SEC = 3.5
 
 # ================= Helper Functions =================
 def highpass_filter(data, cutoff, fs, order=4):
@@ -88,7 +132,7 @@ def double_integrate(acc, dt, cutoff, fs):
     
     return disp_filt
 
-def align_and_evaluate(ref_signal, test_signal, forced_shift=None, shift_min=None, shift_max=None, eval_samples=None):
+def align_and_evaluate(ref_signal, test_signal, forced_shift=None, shift_min=None, shift_max=None, eval_samples=None, min_eval_samples=None):
     """
     Synchronize two signals using cross-correlation and calculate metrics.
     Both signals must be at the same sampling rate.
@@ -135,6 +179,9 @@ def align_and_evaluate(ref_signal, test_signal, forced_shift=None, shift_min=Non
     min_len = min(len(ref_aligned), len(test_aligned))
     if eval_samples is not None:
         min_len = min(min_len, eval_samples)
+        
+    if min_eval_samples is not None and min_len < min_eval_samples:
+        raise ValueError(f"Aligned segment is too short ({min_len} samples). Expected at least {min_eval_samples} samples.")
         
     ref_aligned = ref_aligned[:min_len]
     test_aligned = test_aligned[:min_len]
@@ -245,22 +292,29 @@ def main():
     shift_min_samples = int(SHIFT_MIN_SEC * SEISMIC_FS) if SHIFT_MIN_SEC is not None else None
     shift_max_samples = int(SHIFT_MAX_SEC * SEISMIC_FS) if SHIFT_MAX_SEC is not None else None
     eval_samples = int(EVAL_DURATION_SEC * SEISMIC_FS) if EVAL_DURATION_SEC is not None else None
+    min_eval_samples = int(MIN_EVAL_DURATION_SEC * SEISMIC_FS) if MIN_EVAL_DURATION_SEC is not None else None
 
-    shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(
-        disp_seis_x,
-        disp_vis_x_100hz,
-        shift_min=shift_min_samples,
-        shift_max=shift_max_samples,
-        eval_samples=eval_samples,
-    )
-    # y 轴严格使用 x 轴的 shift 对齐
-    _, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(
-        disp_seis_y,
-        disp_vis_y_100hz,
-        forced_shift=shift_x,
-        eval_samples=eval_samples,
-    )
-    shift_y = shift_x
+    try:
+        shift_x, r_x, mae_x, rmse_x, euclid_x, cos_sim_x, wass_dist_x, ref_x, test_x = align_and_evaluate(
+            disp_seis_x,
+            disp_vis_x_100hz,
+            shift_min=shift_min_samples,
+            shift_max=shift_max_samples,
+            eval_samples=eval_samples,
+            min_eval_samples=min_eval_samples,
+        )
+        # y 轴严格使用 x 轴的 shift 对齐
+        _, r_y, mae_y, rmse_y, euclid_y, cos_sim_y, wass_dist_y, ref_y, test_y = align_and_evaluate(
+            disp_seis_y,
+            disp_vis_y_100hz,
+            forced_shift=shift_x,
+            eval_samples=eval_samples,
+            min_eval_samples=min_eval_samples,
+        )
+        shift_y = shift_x
+    except ValueError as e:
+        print(f"Skipping evaluation: {e}")
+        return
 
     print("6. Computing FFT for Frequency Domain Analysis...")
     # Calculate FFT for X (NS) and Y (EW) aligned segments
@@ -365,6 +419,7 @@ def main():
     print(f"Comparison plot saved to {out_img}")
     # OUTPUT_FOR_PARSE
     print(f"__RESULT_R_X__: {r_x:.4f}")
+    print(f"__RESULT_R_Y__: {r_y:.4f}")
     # plt.show()  # Disable blocking show for automation
 
 if __name__ == "__main__":

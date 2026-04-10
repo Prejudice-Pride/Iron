@@ -67,7 +67,7 @@ from utils.video_io import read_frames
 
 def main():
     parser = argparse.ArgumentParser(description="Homography Calibration Debugger")
-    parser.add_argument("video", nargs="?", default="input_videos/sample.mp4", help="Video path")
+    parser.add_argument("video", nargs="?", default="input_videos/sample3.mp4", help="Video path")
     args = parser.parse_args()
 
     # 1. 加载第一帧
@@ -87,7 +87,7 @@ def main():
         print(f"[!] No distortion params found for {base_name}. Proceeding without image correction.")
     
     # -------------------------------------------------------------
-    # [关键配置] 请在这里输入你实际测量的像素坐标和物理坐标 (mm)
+    # [关键配置] 请在这里输入你实际测量的像素坐标和物理坐标 (cm)
     # -------------------------------------------------------------
     
     # sample.mp4
@@ -95,7 +95,7 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [610, 719]
         ]
         
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
     dst_pts = [
             [0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 210], [0,60]
         ]
@@ -111,6 +111,10 @@ def main():
     # pample2.mp4
     src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
     dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
+    
+    # sample3,mp4
+    src_pts = [[438, 751], [809, 665], [1036, 611], [1218, 568], [1313, 729], [876, 908]]
+    dst_pts = [[0,0],[250,0],[500,0],[750,0],[375,100],[0,100]]
     
     print(f"\n[Step 1] Initializing Calibration for: {base_name}")
     analyzer = Analyzer(output_dir="output/calibration_debug")
