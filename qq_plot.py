@@ -9,8 +9,8 @@ from scipy.integrate import cumulative_trapezoid
 # ================= Configuration (参考 compare_acc_disp.py) =================
 
 # Data Paths
-SEISMIC_TXT_PATH = r"txt_home\sample_p1_910.txt"
-VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_reference_surface_waveform.csv"
+SEISMIC_TXT_PATH = r"txt_home/sample3_206b.txt"
+VISUAL_CSV_PATH = r"best\sample3_0.5273_0.1487_16.67%_0.00%\sample3_output_cancel\sample3_corrected_surface_waveform.csv"
 
 # Axis Mapping
 VISUAL_X_MAPS_TO = 'SN'

@@ -1,0 +1,20 @@
+{
+    "video": "sample_p2.mp4",
+    "best_r_x": 0.6305,
+    "matched_with": "txt_home/sample_p2_910.txt",
+    "rois": [
+        [
+            294,
+            703,
+            1080,
+            939
+        ],
+        [
+            492,
+            14,
+            902,
+            168
+        ]
+    ],
+    "iteration_time": "20260408_190321"
+}

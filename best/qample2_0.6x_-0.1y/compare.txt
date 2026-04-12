@@ -1,0 +1,36 @@
+==================================================
+--- 📊 EVALUATION METRICS (对标论文 4.1 & 4.2) ---
+X-Axis (Visual) vs SN (Seismometer):
+  [1] 时域对齐波形对比 (4.1 手动追踪对标)
+  - Peak Time Alignment Shift: -7.690 seconds
+  - Pearson Correlation (r):   0.6326  (1.0 is perfect)
+  - MAE (平均绝对误差):          1.1329
+  - RMSE (均方根误差):           1.5195
+
+  [2] 统计学特征相似度 (4.2 强震仪数据对标)
+  - 欧氏距离 (Euclid Dist):      28.4264
+  - 余弦相似度 (Cosine Sim):     0.6360  (1.0 is perfect)
+  - Wasserstein 距离:           0.5473
+
+  [3] 频域分析
+  - Seismometer Dominant Freq: 0.571 Hz
+  - Visual Output Dominant Freq: 0.571 Hz
+  - Frequency Error:           0.00 %
+--------------------------------------------------
+Y-Axis (Visual) vs EW (Seismometer):
+  [1] 时域对齐波形对比 (4.1 手动追踪对标)
+  - Peak Time Alignment Shift: -7.690 seconds
+  - Pearson Correlation (r):   -0.1666  (1.0 is perfect)
+  - MAE (平均绝对误差):          1.4070
+  - RMSE (均方根误差):           1.8946
+
+  [2] 统计学特征相似度 (4.2 强震仪数据对标)
+  - 欧氏距离 (Euclid Dist):      35.4444
+  - 余弦相似度 (Cosine Sim):     -0.1811  (1.0 is perfect)
+  - Wasserstein 距离:           0.3242
+
+  [3] 频域分析
+  - Seismometer Dominant Freq: 0.571 Hz
+  - Visual Output Dominant Freq: 0.571 Hz
+  - Frequency Error:           0.00 %
+==================================================

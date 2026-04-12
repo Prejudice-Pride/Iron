@@ -1,0 +1,23 @@
+{
+    "video": "pample2.mp4",
+    "best_r_x": 0.5228,
+    "best_r_y": 0.2748,
+    "best_freq_err_x": 33.33,
+    "best_freq_err_y": 66.67,
+    "matched_with": "txt_home/pample2_901.txt",
+    "rois": [
+        [
+            367,
+            817,
+            861,
+            1036
+        ],
+        [
+            108,
+            11,
+            423,
+            193
+        ]
+    ],
+    "iteration_time": "20260411_155841"
+}

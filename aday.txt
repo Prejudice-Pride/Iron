@@ -1,2 +1,2 @@
-autodl 重新跑一下全程，基线漂移太严重
-compare 继续跑结果
+sample3、qample2结果不够好
+消融实验无法进行下去

@@ -9,7 +9,7 @@ from compare_acc_disp import highpass_filter, lowpass_filter
 # ================= 1. Configuration (Path Only) =================
 
 # 视觉追踪结果 CSV 路径
-VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_corrected_surface_waveform.csv"
+VISUAL_CSV_PATH = r"best\sample3_0.5273_0.1487_16.67%_0.00%\sample3_output_cancel\sample3_corrected_surface_waveform.csv"
 
 # 视觉采样参数
 VISUAL_FS = 25.0         # 25 Hz

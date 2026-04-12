@@ -2,8 +2,8 @@ import argparse
 import cv2
 import os
 
-DEFAULT_VIDEO = r"output\qample2_output_cancel\tracking_vis_qample2.mp4"
-DEFAULT_OUTPUT = r"output\qample2_output_cancel\first_frame.jpg"
+DEFAULT_VIDEO = r"output\sample3_output_cancel\tracking_vis_sample3.mp4"
+DEFAULT_OUTPUT = r"output\sample3_output_cancel\first_frame.jpg"
 
 
 def normalize_output_path(output_path: str) -> str:

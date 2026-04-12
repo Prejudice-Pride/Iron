@@ -38,7 +38,7 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample.mp4"
+DEFAULT_VIDEO = "sample3.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration

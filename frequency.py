@@ -6,8 +6,8 @@ from scipy.fft import rfft, rfftfreq
 
 # ================= Configuration =================
 # 你可以根据需要修改这部分路径和映射
-SEISMIC_TXT_PATH = r"txt_home\sample_p1_910.txt"
-VISUAL_CSV_PATH = r"output\sample_output_cancel\sample_corrected_surface_waveform.csv"
+SEISMIC_TXT_PATH = r"txt_home\sample3_1301.txt"
+VISUAL_CSV_PATH = r"output\sample3_output_cancel\sample3_corrected_surface_waveform.csv"
 
 # Axis Mapping (Camera's perspective vs Seismometer)
 # Default

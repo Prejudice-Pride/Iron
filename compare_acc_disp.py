@@ -21,14 +21,15 @@ VIDEO_AXIS_CONFIGS = {
 
 # Setup Argument Parser for Automation
 parser = argparse.ArgumentParser(description="Evaluate visual tracking vs seismic data.")
-parser.add_argument("--seismic_txt", type=str, default=r"txt_home\pample2_1301.txt", help="Path to ground truth seismic txt")
-parser.add_argument("--visual_csv", type=str, default=r"best\pample2_0.8x_0.2y\pample2_output_cancel\pample2_corrected_surface_waveform.csv", help="Path to visual tracking csv")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home/qample2_910.txt", help="Path to ground truth seismic txt")
+parser.add_argument("--visual_csv", type=str, default=r"best\qample2_0.6x_-0.1y\qample2_output_cancel\qample2_corrected_surface_waveform.csv", help="Path to visual tracking csv")
 parser.add_argument("--out_img", type=str, default="output/visual_vs_seismic_alignment_with_fft.png", help="Path to save output comparison image")
 parser.add_argument("--visual_x_maps_to", type=str, default=None, help="Axis mapping for X (optional, auto-detected from filename if not provided)")
 parser.add_argument("--visual_y_maps_to", type=str, default=None, help="Axis mapping for Y (optional, auto-detected from filename if not provided)")
 args = parser.parse_args()
 
 SEISMIC_TXT_PATH = args.seismic_txt
+
 VISUAL_CSV_PATH = args.visual_csv
 OUT_IMG_PATH = args.out_img
 
@@ -92,7 +93,7 @@ SHIFT_MAX_SEC = None
 # Max evaluation duration (seconds)
 # Set to a fixed number (e.g., 15.0) to only compare N seconds after alignment, avoiding long noisy tails.
 # Set to None to use full overlapping duration.
-EVAL_DURATION_SEC = 6.0
+EVAL_DURATION_SEC = 3.5
 MIN_EVAL_DURATION_SEC = 3.5
 
 # ================= Helper Functions =================
