@@ -38,12 +38,12 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample3.mp4"
+DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
-MAX_POINTS_TARGET = 30
-MAX_POINTS_REF = 30 
+MAX_POINTS_TARGET = 10
+MAX_POINTS_REF = 10 
 CHUNK_LEN = 150
 OVERLAP = 10
 
@@ -260,7 +260,7 @@ def main():
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
-        dst_pts = [[40,0],[85,0],[355,0],[400,0],[0,60],[0,105],[0,585],[0,630]]
+        dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
     else:

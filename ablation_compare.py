@@ -19,9 +19,9 @@ VIDEO_AXIS_CONFIGS = {
 }
 
 parser = argparse.ArgumentParser(description="Ablation study: Evaluate corrected vs raw tracking.")
-parser.add_argument("--seismic_txt", type=str, default=r"txt_home\qample2_206b.txt")
-parser.add_argument("--corrected_csv", type=str, default=r"output\qample2_output_cancel\qample2_reference_surface_waveform.csv")
-parser.add_argument("--raw_csv", type=str, default=r"output\qample2_output_cancel\qample2_raw_surface_waveform.csv")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p2_1301.txt")
+parser.add_argument("--corrected_csv", type=str, default=r"output\sample_output_cancel\sample_corrected_surface_waveform.csv")
+parser.add_argument("--raw_csv", type=str, default=r"output\sample_output_cancel\sample_raw_surface_waveform.csv")
 parser.add_argument("--out_img", type=str, default="output/ablation_visual_vs_seismic.png")
 parser.add_argument("--visual_x_maps_to", type=str, default=None)
 parser.add_argument("--visual_y_maps_to", type=str, default=None)
@@ -51,7 +51,7 @@ VISUAL_FS = 25.0
 HP_CUTOFF = 0.5
 LP_CUTOFF = 5.0
 SHIFT_MIN_SEC, SHIFT_MAX_SEC = None, None
-EVAL_DURATION_SEC = 3.5
+EVAL_DURATION_SEC = 6.0
 MIN_EVAL_DURATION_SEC = 3.5
 
 # ================= Helper Functions =================
@@ -194,28 +194,28 @@ def main():
     plt.plot(t_plot_x, ref_x, 'k-', alpha=0.7, label='Seismometer (GT)')
     plt.plot(t_plot_x, test_rx, 'gray', alpha=0.8, linestyle=':', label='Raw (Before Cancel)')
     plt.plot(t_plot_x, test_cx, 'b--', alpha=0.8, label='Corrected (Ours)')
-    plt.legend(loc='upper right'); plt.grid(True, ls=':')
+    plt.legend(); plt.grid(True, ls=':')
 
     plt.subplot(4, 1, 2)
     plt.title(f"Y-Axis Time Domain | Corrected r={r_cy:.4f} vs Raw r={r_ry:.4f}")
     plt.plot(t_plot_x, ref_y, 'k-', alpha=0.7, label='Seismometer (GT)')
     plt.plot(t_plot_x, test_ry, 'orange', alpha=0.8, linestyle=':', label='Raw (Before Cancel)')
     plt.plot(t_plot_x, test_cy, 'r--', alpha=0.8, label='Corrected (Ours)')
-    plt.legend(loc='upper right'); plt.grid(True, ls=':')
+    plt.legend(); plt.grid(True, ls=':')
 
     plt.subplot(4, 1, 3)
     plt.title(f"X-Axis Frequency | Err: Corr={err_cx:.1f}%, Raw={err_rx:.1f}%")
     plt.plot(fx, amp_ref_x, 'k-', alpha=0.7, label=f'GT ({pf_ref_x:.2f}Hz)')
     plt.plot(fx, amp_rx, 'gray', alpha=0.8, label=f'Raw ({pf_rx:.2f}Hz)')
     plt.plot(fx, amp_cx, 'b-', alpha=0.8, label=f'Corrected ({pf_cx:.2f}Hz)')
-    plt.xlim(0, 10); plt.legend(loc='upper right'); plt.grid(True, ls=':')
+    plt.xlim(0, 10); plt.legend(); plt.grid(True, ls=':')
 
     plt.subplot(4, 1, 4)
     plt.title(f"Y-Axis Frequency | Err: Corr={err_cy:.1f}%, Raw={err_ry:.1f}%")
     plt.plot(fy, amp_ref_y, 'k-', alpha=0.7, label=f'GT ({pf_ref_y:.2f}Hz)')
     plt.plot(fy, amp_ry, 'orange', alpha=0.8, label=f'Raw ({pf_ry:.2f}Hz)')
     plt.plot(fy, amp_cy, 'r-', alpha=0.8, label=f'Corrected ({pf_cy:.2f}Hz)')
-    plt.xlim(0, 10); plt.legend(loc='upper right'); plt.grid(True, ls=':')
+    plt.xlim(0, 10); plt.legend(); plt.grid(True, ls=':')
 
     plt.tight_layout()
     plt.savefig(args.out_img, dpi=300)

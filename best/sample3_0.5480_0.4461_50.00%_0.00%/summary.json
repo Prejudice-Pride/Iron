@@ -1,0 +1,23 @@
+{
+    "video": "sample3.mp4",
+    "best_r_x": 0.548,
+    "best_r_y": 0.4461,
+    "best_freq_err_x": 50.0,
+    "best_freq_err_y": 0.0,
+    "matched_with": "txt_home/sample3_206b.txt",
+    "rois": [
+        [
+            462,
+            576,
+            1666,
+            945
+        ],
+        [
+            158,
+            0,
+            763,
+            84
+        ]
+    ],
+    "iteration_time": "20260412_150800"
+}
