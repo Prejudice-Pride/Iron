@@ -1,4 +1,4 @@
-﻿"""
+"""
 Seismic Surface Tracking with Reference Cancellation
 ===================================================
 
@@ -42,10 +42,10 @@ DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
-MAX_POINTS_TARGET = 10
-MAX_POINTS_REF = 10 
+MAX_POINTS_TARGET = 30
+MAX_POINTS_REF = 30 
 CHUNK_LEN = 150
-OVERLAP = 10
+OVERLAP = 20
 
 def main():
     parser = argparse.ArgumentParser(description="Seismic Surface Tracker with Reference Cancellation")
@@ -94,21 +94,12 @@ def main():
     print(f"Frames: T={T}, HxW={W}x{H}, fps={fps}")
 
     # 3.a Attempt to load self-calibration parameters and apply to frames
-    # Try video-specific calibration first, then fallback to global
-    calib_filename = f"{base_name}_distortion_params.json"
-    calib_path = os.path.join("output", "calibration_debug", calib_filename)
-    global_calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
-    
-    if not os.path.exists(calib_path) and os.path.exists(global_calib_path):
-        print(f"Specific calibration {calib_path} not found. Using global {global_calib_path}")
-        calib_path = global_calib_path
-
+    calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
     if os.path.exists(calib_path):
         try:
             with open(calib_path, 'r', encoding='utf-8') as f:
                 calib = json.load(f)
             print(f"Found distortion params: {calib_path}. Applying correction...")
-            print(f"Distortion Data: {json.dumps(calib, indent=4)}")
             calib_obj = SelfCalibration()
             calib_obj.k3 = float(calib.get('k3', 0.0))
             calib_obj.k5 = float(calib.get('k5', 0.0))
@@ -177,16 +168,17 @@ def main():
     # ---------------------------------------------------------
     if base_name == "sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
-        src_pts = [
-                [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [610, 719]
-            ]
-            
-            # Destination Physical Coordinates (mm)
-        dst_pts = [
-                [0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 210], [0,60]
-            ]
+        # Source Pixels (Extracted manually)
+        src_calib = [
+            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
+        ]
         
-        analyzer.setup_calibration(src_pts, dst_pts)
+        # Destination Physical Coordinates (mm)
+        dst_calib = [
+            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+        ]
+        
+        analyzer.setup_calibration(src_calib, dst_calib)
     elif base_name == "old_sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
@@ -218,8 +210,9 @@ def main():
     elif base_name == "sample3":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
-        src_pts = [[438, 751], [809, 665], [1036, 611], [1218, 568], [1313, 729], [876, 908]]
-        dst_pts = [[0,0],[250,0],[500,0],[750,0],[375,100],[0,100]]
+        src_pts = [[435, 753], [1312, 728], [1515, 668], [1587, 818], [1641, 785], [1765, 733], [1806, 711]]
+        
+        dst_pts = [[0,0],[525,330],[875,330],[450,630],[600,630],[800,630],[950,630]]
         
         analyzer.setup_calibration(src_pts, dst_pts)
         
@@ -240,29 +233,15 @@ def main():
         [0, 200],]
         
         analyzer.setup_calibration(src_pts, dst_pts)
-    elif base_name == "qample":
-        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
-        # Source Pixels (Extracted manually)
-        src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
-        dst_pts = [[0,0],[5,0],[65,15],[70,15],[0,90],[5,90],[65,105],[75,105],[0,150],[5,150],[65,165],[70,165]]
-
-        analyzer.setup_calibration(src_pts, dst_pts)
         
     elif base_name == "qample2":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
-        dst_pts = [[0, 0], [15, 0], [0, 60], [15, 60], [865, 0], [880, 0], [865, 60], [880, 60], [0, 150], [15, 150], [0, 210], [15, 210], [865, 150], [880, 150], [865, 210], [880, 210]]
+        dst_pts = [[0,0],[15,0],[0,60],[15,60],[865,0],[880,0],[865,60],[880,60],[0,150],[15,150],[0,210],[15,210],[865,150],[880,150],[865,210],[880,210]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
         
-    elif base_name == "pample2":
-        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
-        # Source Pixels (Extracted manually)
-        src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
-        dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
-
-        analyzer.setup_calibration(src_pts, dst_pts)
     else:
         print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
 
@@ -419,9 +398,8 @@ def main():
     # We can visualize all tracks.
     # Visualization video generation is disabled per request.
     vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
-    from utils.visualizer import visualize_tracks
-    # 修改：使用 visualize_tracks (无折线图版本) 并增加颜色渲染逻辑
-    visualize_tracks(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    from utils.visualizer import visualize_tracks_with_plot
+    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
     print(f"Saved visualization to {vis_path}")
     
     # Compute Waveform on RAW data

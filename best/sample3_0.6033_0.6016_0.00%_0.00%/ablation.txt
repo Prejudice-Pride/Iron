@@ -1,0 +1,32 @@
+$ python ablation_compare.py 
+
+==================================================
+=== ABLATION STUDY RESULTS: CORRECTED vs RAW ===
+X-Axis (VS Seismometer NS)
+  [Corrected (Ours)]
+    - Pearson R:       0.7646
+    - RMSE:            1.1385
+    - MAE:             0.9788
+    - Frequency Error: 0.00% (Peak: 0.56Hz)
+    - Wasserstein:     0.5615
+  [Raw / Baseline (No Cancel)]
+    - Pearson R:       -0.6023
+    - RMSE:            2.3424
+    - MAE:             2.0821
+    - Frequency Error: 0.00% (Peak: 0.56Hz)
+    - Wasserstein:     1.0750
+--------------------------------------------------
+Y-Axis (VS Seismometer WE)
+  [Corrected (Ours)]
+    - Pearson R:       0.6861
+    - RMSE:            1.2039
+    - MAE:             0.9480
+    - Frequency Error: 0.00% (Peak: 0.56Hz)
+    - Wasserstein:     0.2872
+  [Raw / Baseline (No Cancel)]
+    - Pearson R:       -0.6858
+    - RMSE:            2.2419
+    - MAE:             1.9367
+    - Frequency Error: 0.00% (Peak: 0.56Hz)
+    - Wasserstein:     0.7041
+==================================================

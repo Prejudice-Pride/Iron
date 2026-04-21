@@ -19,9 +19,9 @@ VIDEO_AXIS_CONFIGS = {
 }
 
 parser = argparse.ArgumentParser(description="Ablation study: Evaluate corrected vs raw tracking.")
-parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p2_1301.txt")
-parser.add_argument("--corrected_csv", type=str, default=r"output\sample_output_cancel\sample_corrected_surface_waveform.csv")
-parser.add_argument("--raw_csv", type=str, default=r"output\sample_output_cancel\sample_raw_surface_waveform.csv")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample3_206a.txt")
+parser.add_argument("--corrected_csv", type=str, default=r"output\sample3_output_cancel\sample3_corrected_surface_waveform.csv")
+parser.add_argument("--raw_csv", type=str, default=r"output\sample3_output_cancel\sample3_raw_surface_waveform.csv")
 parser.add_argument("--out_img", type=str, default="output/ablation_visual_vs_seismic.png")
 parser.add_argument("--visual_x_maps_to", type=str, default=None)
 parser.add_argument("--visual_y_maps_to", type=str, default=None)

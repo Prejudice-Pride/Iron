@@ -1,0 +1,52 @@
+$ python compare_acc_disp.py 
+✓ Auto-detected axis mapping from video 'sample_corrected_surface_waveform': X→NS, Y→WE
+1. Loading Seismometer Data (100Hz)...
+2. Integrating Acceleration to Displacement...
+3. Loading Visual Tracking Data (25Hz)...
+4. Upsampling Visual Data to match Seismometer (100Hz) for precise alignment...
+5. Aligning timelines & calculating correlation...
+6. Computing FFT for Frequency Domain Analysis...
+
+==================================================
+--- 📊 EVALUATION METRICS (对标论文 4.1 & 4.2) ---
+X-Axis (Visual) vs NS (Seismometer):
+  [1] 时域对齐波形对比 (4.1 手动追踪对标)
+  - Peak Time Alignment Shift: 7.340 seconds
+  - Pearson Correlation (r):   0.6775  (1.0 is perfect)
+  - MAE (平均绝对误差):          0.7326
+  - RMSE (均方根误差):           0.9049
+
+  [2] 统计学特征相似度 (4.2 强震仪数据对标)
+  - 欧氏距离 (Euclid Dist):      17.3115
+  - 余弦相似度 (Cosine Sim):     0.6756  (1.0 is perfect)
+  - Wasserstein 距离:           0.3339
+
+  [3] 频域分析
+  - Seismometer Dominant Freq: 1.093 Hz
+  - Visual Output Dominant Freq: 0.820 Hz
+  - Frequency Error:           25.00 %
+--------------------------------------------------
+Y-Axis (Visual) vs WE (Seismometer):
+  [1] 时域对齐波形对比 (4.1 手动追踪对标)
+  - Peak Time Alignment Shift: 7.340 seconds
+  - Pearson Correlation (r):   0.5315  (1.0 is perfect)
+  - MAE (平均绝对误差):          0.5958
+  - RMSE (均方根误差):           0.7552
+
+  [2] 统计学特征相似度 (4.2 强震仪数据对标)
+  - 欧氏距离 (Euclid Dist):      14.4475
+  - 余弦相似度 (Cosine Sim):     0.5304  (1.0 is perfect)
+  - Wasserstein 距离:           0.3182
+
+  [3] 频域分析
+  - Seismometer Dominant Freq: 1.366 Hz
+  - Visual Output Dominant Freq: 1.366 Hz
+  - Frequency Error:           0.00 %
+==================================================
+
+7. Plotting comparisons...
+Comparison plot saved to output/visual_vs_seismic_alignment_with_fft.png
+__RESULT_R_X__: 0.6775
+__RESULT_R_Y__: 0.5315
+__RESULT_FREQ_ERR_X__: 25.00
+__RESULT_FREQ_ERR_Y__: 0.00
