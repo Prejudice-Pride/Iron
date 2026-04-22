@@ -65,18 +65,30 @@ def undistort_image_manual(img, params):
 from core.analyzer import Analyzer
 from utils.video_io import read_frames
 
+
+def load_first_frame(media_path):
+    """优先按图片读取；若不是图片，则按视频读取第一帧。"""
+    img = cv2.imread(media_path)
+    if img is not None:
+        # 统一为 RGB，和 read_frames 的返回格式保持一致
+        return cv2.cvtColor(img, cv2.COLOR_BGR2RGB), "image"
+
+    frames, _ = read_frames(media_path)
+    if frames is None or len(frames) == 0:
+        raise ValueError(f"Could not read media: {media_path}")
+    return frames[0].copy(), "video"
+
 def main():
     parser = argparse.ArgumentParser(description="Homography Calibration Debugger")
-    parser.add_argument("video", nargs="?", default="input_videos/pample2.mp4", help="Video path")
+    parser.add_argument("video", nargs="?", default="discussion\s1.png", help="Image or video path")
     args = parser.parse_args()
 
-    # 1. 加载第一帧
+    # 1. 加载第一帧 / 单张图片
     if not os.path.exists(args.video):
-        print(f"Error: Video not found at {args.video}")
+        print(f"Error: Media not found at {args.video}")
         return
 
-    frames, fps = read_frames(args.video)
-    img = frames[0].copy()
+    img, media_type = load_first_frame(args.video)
     base_name = os.path.splitext(os.path.basename(args.video))[0]
 
     distortion_params = load_distortion_params(args.video)
@@ -91,39 +103,46 @@ def main():
     # -------------------------------------------------------------
     
     # sample.mp4
-    src_pts = [
-            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [610, 719]
-        ]
-        
-        # Destination Physical Coordinates (cm)
-    dst_pts = [
-            [0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 210], [0,60]
-        ]
+    src_pts = [[297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620], [610, 719]]
+    dst_pts = [[0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 210], [0,60]]
     
-    # qample.mp4
-    src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
-    dst_pts = [[0,0],[5,0],[65,15],[70,15],[0,90],[5,90],[65,105],[75,105],[0,150],[5,150],[65,165],[70,165]]
-    
-    # qample2.mp4
-    src_pts = [[1120, 950], [1132, 948], [989, 808], [1000, 808], [1561, 756], [1568, 755], [874, 687], [880, 687], [835, 642], [840, 642],[1322, 666], [1327, 665], [1216, 628], [1222, 626]]
-    dst_pts = [[0, 0], [5, 0], [0, 60], [5, 60], [190, 60], [195, 60], [0, 150], [5, 150], [0, 210], [5, 210],[190, 150],[195, 150],[190, 210],[195, 210]]
+    # sample.mp4(改)
+    src_pts = [[308, 864], [620, 720], [1157, 921], [1319, 703]]
+    dst_pts = [[5, 0], [5, 60], [135, 60], [135, 150]]
 
-    # # pample2.mp4
-    src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
-    dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
+    # -------------------------------------------------------------
+    # [新增] 需要通过 H 映射到现实坐标系的像素点列表 (x, y)
+    # 说明：这里填写图像像素坐标，程序会输出对应的物理坐标(cm)
+    # -------------------------------------------------------------
+    query_pts = [
+        [1687, 419]
+    ]
     
-    # # sample3,mp4
+    # # qample.mp4
+    # src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
+    # dst_pts = [[0,0],[5,0],[65,15],[70,15],[0,90],[5,90],[65,105],[75,105],[0,150],[5,150],[65,165],[70,165]]
+    
+    # # qample2.mp4
+    # src_pts = [[1120, 950], [1132, 948], [989, 808], [1000, 808], [1561, 756], [1568, 755], [874, 687], [880, 687], [835, 642], [840, 642],[1322, 666], [1327, 665], [1216, 628], [1222, 626]]
+    # dst_pts = [[0, 0], [5, 0], [0, 60], [5, 60], [190, 60], [195, 60], [0, 150], [5, 150], [0, 210], [5, 210],[190, 150],[195, 150],[190, 210],[195, 210]]
+
+    # # # pample2.mp4
+    # src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
+    # dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
+    
+    # # sample3.mp4
     # src_pts = [[438, 751], [809, 665], [1036, 611], [1218, 568], [1313, 729], [876, 908]]
     # dst_pts = [[0,0],[250,0],[500,0],[750,0],[375,100],[0,100]]
     
-    print(f"\n[Step 1] Initializing Calibration for: {base_name}")
+    # sample2.mp4
+    # src_pts = [[478, 482], [655, 479], [684, 394], [519, 393]]
+    # dst_pts = [[0, 0], [250, 0], [0, 600], [250, 600]]
+    
+    print(f"\n[Step 1] Initializing Calibration for: {base_name} ({media_type})")
     analyzer = Analyzer(output_dir="output/calibration_debug")
     
     src_np = np.array(src_pts, dtype=np.float32)
     dst_np = np.array(dst_pts, dtype=np.float32)
-
-    if distortion_params is not None:
-        src_np = undistort_points_manual(src_np, distortion_params, img.shape[1], img.shape[0])
 
     # 2. 计算 Homography
     # 用 RANSAC 自动剔除错误点对，阈值设为 5 像素
@@ -165,6 +184,20 @@ def main():
     # 复合变换矩阵：像素(Image) -> 物理(Physical) -> 画布(Canvas)
     M = S @ H
     warped = cv2.warpPerspective(img, M, (target_w, target_h))
+
+    # -------------------------------------------------------------
+    # [新增] 将 query_pts 从像素坐标映射到物理坐标，并显示在两张图上
+    # -------------------------------------------------------------
+    query_np = np.array(query_pts, dtype=np.float32).reshape(-1, 2)
+    query_phys = cv2.perspectiveTransform(query_np.reshape(-1, 1, 2), H).reshape(-1, 2)
+    query_canvas = cv2.perspectiveTransform(query_phys.reshape(-1, 1, 2), S).reshape(-1, 2)
+
+    print("[Query Points] Pixel -> Physical (cm):")
+    for i, (p_pix, p_phy) in enumerate(zip(query_np, query_phys)):
+        print(
+            f"  #{i}: ({p_pix[0]:.2f}, {p_pix[1]:.2f}) -> "
+            f"({p_phy[0]:.2f}, {p_phy[1]:.2f})"
+        )
     
     # -------------------------------------------------------------
     # [新增] 在鸟瞰图中绘制坐标系和标定点
@@ -199,6 +232,14 @@ def main():
         label = f"#{i}:({p_pt[0]},{p_pt[1]})"
         cv2.putText(warped, label, (cx + 10, cy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, point_color, 1)
 
+    # 3. 绘制 query 点在鸟瞰图上的位置（带物理坐标）
+    query_color = (255, 0, 255)  # 紫色
+    for i, (c_pt, p_phy) in enumerate(zip(query_canvas, query_phys)):
+        cx, cy = int(c_pt[0]), int(c_pt[1])
+        cv2.circle(warped, (cx, cy), 7, query_color, -1)
+        label = f"Q{i}:({p_phy[0]:.1f},{p_phy[1]:.1f})cm"
+        cv2.putText(warped, label, (cx + 10, cy + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, query_color, 1)
+
     # 5. 保存调试图像
     debug_img_path = os.path.join(analyzer.output_dir, f"{base_name}_debug_points.jpg")
     bev_path = os.path.join(analyzer.output_dir, f"{base_name}_birds_eye_view.jpg")
@@ -208,6 +249,15 @@ def main():
         color = (0, 255, 0) if m else (0, 0, 255) 
         cv2.circle(img, (int(p_src[0]), int(p_src[1])), 8, color, -1)
         cv2.putText(img, str(i), (int(p_src[0])+10, int(p_src[1])), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+
+    # 在原图上画 query 点（并标注其物理坐标）
+    # 当前流程中 img 已经是矫正后的图像，query_pts 也应为矫正后图像坐标
+    query_draw_pts = query_np
+    for i, (p_draw, p_phy) in enumerate(zip(query_draw_pts, query_phys)):
+        x, y = int(p_draw[0]), int(p_draw[1])
+        cv2.circle(img, (x, y), 7, query_color, -1)
+        label = f"Q{i}:({p_phy[0]:.1f},{p_phy[1]:.1f})cm"
+        cv2.putText(img, label, (x + 10, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, query_color, 2)
 
     cv2.imwrite(debug_img_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
     cv2.imwrite(bev_path, cv2.cvtColor(warped, cv2.COLOR_RGB2BGR))

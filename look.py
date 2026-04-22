@@ -4,38 +4,20 @@ import os
 import json
 
 
-image_path = "input_videos\pample2.mp4"
+image_path = "input_videos\sample.mp4"
 
-try:
-    import sys
-    # Ensure project root is in sys.path to import utils
-    REPODIR = os.path.abspath(os.path.dirname(__file__))
-    if REPODIR not in sys.path:
-        sys.path.insert(0, REPODIR)
-    from utils.self_calibration import SelfCalibration
-except ImportError:
-    SelfCalibration = None
+from calibration import undistort_image_manual, load_distortion_params
 
-def apply_distortion_correction_if_exists(img):
-    calib_path = os.path.join("output", "calibration_debug", "distortion_params.json")
-    if os.path.exists(calib_path) and SelfCalibration is not None:
-        try:
-            with open(calib_path, 'r', encoding='utf-8') as f:
-                calib = json.load(f)
-            print(f"Found distortion params: {calib_path}. Applying correction for selection...")
-            H, W = img.shape[:2]
-            calib_obj = SelfCalibration()
-            calib_obj.k3 = float(calib.get('k3', 0.0))
-            calib_obj.k5 = float(calib.get('k5', 0.0))
-            cx = float(calib.get('cx', W/2.0))
-            cy = float(calib.get('cy', H/2.0))
-            calib_obj.center = (cx, cy)
-            
-            corrected = calib_obj.apply_to_image(img)
-            return corrected
-        except Exception as e:
-            print(f"Warning: Failed to load/apply distortion params: {e}")
-            return img
+
+def apply_distortion_correction_if_exists(img, media_path):
+    """
+    Loads distortion parameters based on media_path and applies correction.
+    This logic is now aligned with calibration.py.
+    """
+    distortion_params = load_distortion_params(media_path)
+    if distortion_params:
+        print(f"Found distortion params for {os.path.basename(media_path)}. Applying correction...")
+        return undistort_image_manual(img, distortion_params)
     return img
 
 def _interactive_select_coords(img):
@@ -48,7 +30,10 @@ def _interactive_select_coords(img):
             print(f"Clicked at: {x}, {y}")
             # Draw a circle on the image
             cv2.circle(clone, (x, y), 1, (0, 0, 255), -1)
-            cv2.imshow("Select Coordinates", clone)
+            
+        temp_img = clone.copy()
+        cv2.putText(temp_img, f"X:{x} Y:{y}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        cv2.imshow("Select Coordinates", temp_img)
 
     cv2.namedWindow("Select Coordinates")
     cv2.setMouseCallback("Select Coordinates", mouse_callback)
@@ -104,12 +89,6 @@ def _interactive_select_boxes(img):
             drawing = True
             ix, iy = x, y
 
-        elif event == cv2.EVENT_MOUSEMOVE:
-            if drawing:
-                temp_img = current_img.copy()
-                cv2.rectangle(temp_img, (ix, iy), (x, y), (0, 255, 0), 2)
-                cv2.imshow("Select Boxes", temp_img)
-
         elif event == cv2.EVENT_LBUTTONUP:
             drawing = False
             x_min, y_min = min(ix, x), min(iy, y)
@@ -123,7 +102,13 @@ def _interactive_select_boxes(img):
                 
                 # Draw confirmed box
                 cv2.rectangle(current_img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                cv2.imshow("Select Boxes", current_img)
+
+        temp_img = current_img.copy()
+        if drawing:
+            cv2.rectangle(temp_img, (ix, iy), (x, y), (0, 255, 0), 2)
+            
+        cv2.putText(temp_img, f"X:{x} Y:{y}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        cv2.imshow("Select Boxes", temp_img)
 
     cv2.namedWindow("Select Boxes")
     cv2.setMouseCallback("Select Boxes", mouse_callback)
@@ -178,12 +163,6 @@ def _interactive_select_lines(img):
             drawing = True
             ix, iy = x, y
 
-        elif event == cv2.EVENT_MOUSEMOVE:
-            if drawing:
-                temp_img = current_img.copy()
-                cv2.line(temp_img, (ix, iy), (x, y), (0, 255, 0), 2)
-                cv2.imshow("Select Lines", temp_img)
-
         elif event == cv2.EVENT_LBUTTONUP:
             drawing = False
             # Ignore zero-length lines
@@ -194,7 +173,13 @@ def _interactive_select_lines(img):
                 
                 # Draw confirmed line
                 cv2.line(current_img, (ix, iy), (x, y), (0, 255, 0), 2)
-                cv2.imshow("Select Lines", current_img)
+
+        temp_img = current_img.copy()
+        if drawing:
+            cv2.line(temp_img, (ix, iy), (x, y), (0, 255, 0), 2)
+            
+        cv2.putText(temp_img, f"X:{x} Y:{y}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+        cv2.imshow("Select Lines", temp_img)
 
     cv2.namedWindow("Select Lines")
     cv2.setMouseCallback("Select Lines", mouse_callback)
@@ -240,7 +225,7 @@ def _load_media_first_frame(media_path):
     # 1. Try to read as image
     img = cv2.imread(media_path)
     if img is not None:
-        return apply_distortion_correction_if_exists(img)
+        return apply_distortion_correction_if_exists(img, media_path)
     
     # 2. Try to read as video
     cap = cv2.VideoCapture(media_path)
@@ -249,7 +234,7 @@ def _load_media_first_frame(media_path):
         cap.release()
         if ret:
             # frame is the first frame
-            return apply_distortion_correction_if_exists(frame)
+            return apply_distortion_correction_if_exists(frame, media_path)
             
     # If both fail
     raise ValueError(f"Could not open media (image or video): {media_path}")
@@ -291,13 +276,13 @@ def select_lines_from_media(media_path):
 def main():
     
     
-    boxes = select_boxes_from_media(image_path)
-    print("All selected boxes:", boxes)
+    # boxes = select_boxes_from_media(image_path)
+    # print("All selected boxes:", boxes)
     
     # lines = select_lines_from_media(image_path)
     
-    # points = select_coords_from_media(image_path)
-    # print("All selected points:", points)
+    points = select_coords_from_media(image_path)
+    print("All selected points:", points)
 
 if __name__ == '__main__':
     main()
