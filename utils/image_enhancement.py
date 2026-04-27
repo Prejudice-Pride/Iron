@@ -42,9 +42,19 @@ def enhance_frames(frames, use_clahe=True, use_bilateral=False):
         return frames
         
     print(f"Applying image enhancements (CLAHE={use_clahe}, Bilateral={use_bilateral})...")
-    enhanced_frames = []
+    
+    # Create CLAHE object once if needed
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)) if use_clahe else None
+    
+    enhanced_frames = np.empty_like(frames)
     for i in range(frames.shape[0]):
-        enhanced_frames.append(enhance_frame_for_tracking(frames[i], use_clahe, use_bilateral))
+        # Inline processing to avoid function call overhead
+        gray = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
+        if use_bilateral:
+            gray = cv2.bilateralFilter(gray, d=5, sigmaColor=50, sigmaSpace=50)
+        if use_clahe:
+            gray = clahe.apply(gray)
+        enhanced_frames[i] = cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB)
         
     print("Image enhancement complete.")
-    return np.stack(enhanced_frames, axis=0)
+    return enhanced_frames

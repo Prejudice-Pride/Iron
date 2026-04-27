@@ -4,7 +4,7 @@ import os
 
 # python extract_first_frame.py --video input_videos/sample_p1.mp4 --frame 2 --output output/frame_2.jpg
 
-DEFAULT_VIDEO = r"input_videos\sample_p1.mp4"
+DEFAULT_VIDEO = r"input_videos\pample2.mp4"
 DEFAULT_FRAME = 1
 DEFAULT_OUTPUT = rf"output\frame_{DEFAULT_FRAME}.jpg"
 

@@ -150,33 +150,42 @@ class SelfCalibration:
         全图像校正映射
         """
         h, w = image.shape[:2]
-        new_img = np.zeros_like(image)
         
-        # 构建网格坐标
-        y, x = np.indices((h, w), dtype=np.float32)
-        coords = np.stack([x.ravel(), y.ravel()], axis=1)
-        
-        # 如果还没设定中心点，设为默认中心
-        if self.center is None:
-            self.center = (w / 2.0, h / 2.0)
+        # 优化：计算一次映射和填补掩码进行缓存，加速视频处理
+        if not hasattr(self, '_map_initialized') or self._map_h != h or self._map_w != w:
+            y, x = np.indices((h, w), dtype=np.float32)
+            coords = np.stack([x.ravel(), y.ravel()], axis=1)
             
-        # 计算校正后的坐标 (xu, yu)
-        undistorted = self.undistort_points(coords, self.k3, self.k5, self.p1, self.p2, self.center)
-        
-        ux = undistorted[:, 0]
-        uy = undistorted[:, 1]
-        
-        u_int_x = np.round(ux).astype(int)
-        u_int_y = np.round(uy).astype(int)
-        
-        valid = (u_int_x >= 0) & (u_int_x < w) & (u_int_y >= 0) & (u_int_y < h)
-        grid_y, grid_x = y.ravel().astype(int), x.ravel().astype(int)
-        
-        new_img[u_int_y[valid], u_int_x[valid]] = image[grid_y[valid], grid_x[valid]]
+            if self.center is None:
+                self.center = (w / 2.0, h / 2.0)
+                
+            undistorted = self.undistort_points(coords, self.k3, self.k5, self.p1, self.p2, self.center)
+            
+            ux = undistorted[:, 0]
+            uy = undistorted[:, 1]
+            
+            u_int_x = np.round(ux).astype(int)
+            u_int_y = np.round(uy).astype(int)
+            
+            valid = (u_int_x >= 0) & (u_int_x < w) & (u_int_y >= 0) & (u_int_y < h)
+            grid_y, grid_x = y.ravel().astype(int), x.ravel().astype(int)
+            
+            self._dst_y = u_int_y[valid]
+            self._dst_x = u_int_x[valid]
+            self._src_y = grid_y[valid]
+            self._src_x = grid_x[valid]
+            self._map_h = h
+            self._map_w = w
+            self._map_initialized = True
+            
+            # 预热形态学核
+            self._kernel = np.ones((3,3), np.uint8)
+
+        new_img = np.zeros_like(image)
+        new_img[self._dst_y, self._dst_x] = image[self._src_y, self._src_x]
         
         # 形态学填补空洞
-        kernel = np.ones((3,3), np.uint8)
-        new_img = cv2.morphologyEx(new_img, cv2.MORPH_CLOSE, kernel)
+        new_img = cv2.morphologyEx(new_img, cv2.MORPH_CLOSE, self._kernel)
         
         return new_img
 

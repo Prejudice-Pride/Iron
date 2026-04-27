@@ -33,8 +33,8 @@ from utils.visualizer import visualize_tracks
 from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
-INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample.mp4"
+INPUT_DIR = "discussion\\videos"
+DEFAULT_VIDEO = "cond3.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -78,10 +78,9 @@ def main():
     print(f"Output to: {out_dir}")
 
     # 2. Logic Setup
-    sampler = Sampler(roi_dir="rois")
     engine = TrackingEngine()
     analyzer = Analyzer(output_dir=out_dir)
-    print("Sampler, Engine, and Analyzer are loaded successfully!")
+    print("Engine, and Analyzer are loaded successfully!")
 
     # 3. Read Video
     print("Reading frames...")
@@ -121,45 +120,26 @@ def main():
     # 这里默认启用 CLAHE 局部对比度增强，这有助于更稳定地检测弱纹理表面的角点
     frames = enhance_frames(frames, use_clahe=True, use_bilateral=False)
 
-    # 4. ROI Selection (Target + Reference)
-    # 保留双 ROI 结构以兼容原有数据和流程，但不再执行取消逻辑
-    ROI_SUFFIX = "_rois.json"
-
-    # Try to load existing ROIs
-    rois, roi_path = sampler.load_rois(base_name, roi_suffix=ROI_SUFFIX)
-
-    if rois is None:
-        print("\n--- ROI SELECTION REQUIRED ---")
-        print(f"No existing ROIs found for {base_name}.")
-        print("Please select exactly 2 ROIs:")
-        print("  1. TARGET ROI (The object or surface to analyze).")
-        print("  2. REFERENCE ROI (Stable background/building).")
-
-        # Check interactivity
-        can_interactive = bool(os.environ.get('DISPLAY')) or (os.name == 'nt')
-        if not can_interactive:
-            print("Error: Running in headless mode and no ROI file found.")
-            sys.exit(1)
-
-        rois = sampler.select_rois_interactive(frames[0], window_name="Select TARGET then REFERENCE")
-
-        if not rois or len(rois) != 2:
-            print(f"Error: Expected exactly 2 ROIs, got {len(rois) if rois else 0}.")
-            print("Please run again and select exactly 2 boxes.")
-            sys.exit(1)
-
-        sampler.save_rois(roi_path, rois)
-        print(f"Saved ROIs to {roi_path}")
+    # 4. Corner Point Sampling
+    print("Loading corner points...")
+    corner_file = os.path.join("corner_points", f"{base_name}_corners.json")
+    if os.path.exists(corner_file):
+        with open(corner_file, 'r') as f:
+            pts_target = np.array(json.load(f))
+        pts_ref = np.array([])  # No reference points for nocancel
     else:
-        print(f"Loaded rois from {roi_path}")
-        if len(rois) != 2:
-            print(f"Warning: Loaded ROI file contains {len(rois)} ROIs. Expected 2. Using first two.")
-            if len(rois) < 2:
-                print("Error: Insufficient ROIs.")
-                sys.exit(1)
-            rois = rois[:2]
+        print(f"Error: Corner points file not found: {corner_file}")
+        sys.exit(1)
 
-    # ---------------------------------------------------------
+    print(f"Loaded {len(pts_target)} Target points.")
+    print(f"Loaded {len(pts_ref)} Reference points.")
+
+    if len(pts_target) == 0:
+        print("Error: No target points found.")
+        sys.exit(1)
+
+    all_points = pts_target  # Only target points
+    num_target = len(pts_target)
     # ENGINEERED CALIBRATION SETUP (Sample.mp4 Specific)
     # ---------------------------------------------------------
     if base_name == "sample":
@@ -239,29 +219,60 @@ def main():
         dst_pts = [[0, 0], [15, 0], [0, 60], [15, 60], [865, 0], [880, 0], [865, 60], [880, 60], [0, 150], [15, 150], [0, 210], [15, 210], [865, 150], [880, 150], [865, 210], [880, 210]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
+    elif base_name == "cond" :
+        print("\n[INFO] Applying Engineered Calibration for cond1.mp4...")
+        src_pts = [[740, 674], [678, 1015], [1057, 1021], [1026, 678]]
+        dst_pts = [[0, 0], [18, 0], [18, 14], [0, 14]]
+        
+        analyzer.setup_calibration(src_pts, dst_pts)
+
+    elif base_name == "cond1" :
+        print("\n[INFO] Applying Engineered Calibration for cond1.mp4...")
+        src_pts = [[740, 674], [716, 804], [808, 808], [1070, 702]]
+        dst_pts = [[0, 0], [8, 0], [8, 4], [2, 16]]
+        
+        analyzer.setup_calibration(src_pts, dst_pts)
+        
+    elif base_name == "cond2":
+        print("\n[INFO] Applying Engineered Calibration for cond2.mp4...")
+        src_pts = [[688, 669], [715, 806], [802, 596], [1071, 703]]
+        dst_pts = [[0, 0], [8, 0], [8, 4], [2, 16]]
+        analyzer.setup_calibration(src_pts, dst_pts)
+        
+    elif base_name == "cond3":
+        print("\n[INFO] Applying Engineered Calibration for cond3.mp4...")
+        src_pts = [[740, 670], [692, 937], [1049, 944], [1026, 677]]
+        dst_pts = [[0, 0], [18, 0], [18, 14], [0, 14]]
+        analyzer.setup_calibration(src_pts, dst_pts)
+    
+    elif base_name == "cond4":
+        print("\n[INFO] Applying Engineered Calibration for cond4.mp4...")
+        src_pts = [[688, 669], [644, 994], [1024, 995], [981, 671]]
+        dst_pts = [[0, 0], [18, 0], [18, 14], [0, 14]]
+        analyzer.setup_calibration(src_pts, dst_pts)
 
     else:
         print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
 
-    # 5. Point Detection
-    # Detect independently to know which is which
-    print("Detecting points...")
-    roi_target = rois[0]
-    roi_ref = rois[1]
+    # 5. Corner Point Sampling
+    print("Loading corner points...")
+    corner_file = os.path.join("corner_points", f"{base_name}_corners.json")
+    if os.path.exists(corner_file):
+        with open(corner_file, 'r') as f:
+            pts_target = np.array(json.load(f))
+        pts_ref = np.array([])  # No reference points for nocancel
+    else:
+        print(f"Error: Corner points file not found: {corner_file}")
+        sys.exit(1)
 
-    pts_target = sampler.detect_roi_points_orb(frames[0], [roi_target], max_points=MAX_POINTS_TARGET)
-    pts_ref = sampler.detect_roi_points_orb(frames[0], [roi_ref], max_points=MAX_POINTS_REF)
-
-    print(f"Detected {len(pts_target)} Target points.")
-    print(f"Detected {len(pts_ref)} Reference points.")
+    print(f"Loaded {len(pts_target)} Target points.")
+    print(f"Loaded {len(pts_ref)} Reference points.")
 
     if len(pts_target) == 0:
         print("Error: No target points found.")
         sys.exit(1)
-    if len(pts_ref) == 0:
-        print("Warning: No reference points found. Continuing without cancellation.")
 
-    all_points = np.concatenate([pts_target, pts_ref], axis=0)
+    all_points = pts_target  # Only target points
     num_target = len(pts_target)
 
     # 6. Tracking
@@ -303,7 +314,7 @@ def main():
     # Visualize
     vis_path = os.path.join(out_dir, f"tracking_vis_{base_name}.mp4")
     from utils.visualizer import visualize_tracks_with_plot
-    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps, rois=rois)
+    visualize_tracks_with_plot(frames, tracks, visibilities, vis_path, fps)
     print(f"Saved visualization to {vis_path}")
 
     # Compute Waveform on TARGET data

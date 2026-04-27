@@ -351,7 +351,11 @@ class Analyzer:
         from scipy.signal import butter, filtfilt
         def lowpass_filter(data, cutoff, fs=30.0, order=4):
             nyq = 0.5 * fs
-            normal_cutoff = cutoff / nyq
+            # 关键修复：确保截止频率低于奎斯特频率，且由于低帧率限制，自适应调整截止频率
+            effective_cutoff = min(cutoff, nyq * 0.9)
+            if effective_cutoff <= 0:
+                return data
+            normal_cutoff = effective_cutoff / nyq
             b, a = butter(order, normal_cutoff, btype='low', analog=False)
             # 处理 NaN: 仅对有效数据段滤波
             mask = ~np.isnan(data)

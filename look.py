@@ -4,7 +4,7 @@ import os
 import json
 
 
-image_path = "input_videos\sample.mp4"
+image_path = "discussion\\videos\cond3.mp4"
 
 from calibration import undistort_image_manual, load_distortion_params
 

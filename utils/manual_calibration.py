@@ -138,5 +138,5 @@ def manual_tune(video_path):
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    default_video = "C:/Users/Administrator/Desktop/Princess/TheForge/Iron/input_videos/sample4.mp4"
+    default_video = "C:/Users/Administrator/Desktop/Princess/TheForge/Iron/input_videos/sample.mp4"
     manual_tune(default_video)
