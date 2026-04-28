@@ -3,6 +3,8 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
+# python plot_displacement.py output/cond1_output/cond1_tracked_surface_waveform.csv
+# python plot_displacement.py output/cond2_output/cond2_tracked_surface_waveform.csv
 # python plot_displacement.py output/cond3_output/cond3_tracked_surface_waveform.csv
 
 def main():

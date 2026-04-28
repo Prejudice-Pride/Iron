@@ -9,7 +9,7 @@ class Analyzer:
         self.output_dir = output_dir
         os.makedirs(self.output_dir, exist_ok=True)
         self.homography_matrix = None
-        self.pixels_to_mm_fallback = 10.0 # Default if no calibration
+        self.pixels_to_cm_fallback = 1.0 # Default if no calibration
 
     def setup_calibration(self, src_pts, dst_pts):
         """
@@ -17,7 +17,8 @@ class Analyzer:
         Supports robust estimation using RANSAC if more than 4 points are provided.
         
         src_pts: List of pixel coordinates [x, y] from the video (N >= 4)
-        dst_pts: List of corresponding physical coordinates [x_mm, y_mm] (N >= 4)
+        dst_pts: List of corresponding physical coordinates [x_cm, y_cm] (N >= 4)
+        All calculations in this system use cm.
         """
         import cv2
         src_pts = np.array(src_pts, dtype=np.float32)
@@ -37,19 +38,17 @@ class Analyzer:
     def pixel_to_physical(self, tracks):
         """
         Transform pixel tracks (N, T, 2) to physical cm tracks.
-        (Note: Internally converts the calibrated output [which defaults to mm] to cm)
+        (Assumes self.homography_matrix was calibrated with dst_pts in cm)
         """
         if self.homography_matrix is None:
-            # Fallback is assumed to be 10.0 mm/pixel, so we return in cm:
-            return (tracks * self.pixels_to_mm_fallback) / 10.0
+            # Fallback is assumed to be 1.0 cm/pixel
+            return tracks * self.pixels_to_cm_fallback
             
         N, T, _ = tracks.shape
         # Reshape to (N*T, 1, 2) for cv2.perspectiveTransform
         reshaped_tracks = tracks.reshape(-1, 1, 2).astype(np.float32)
         import cv2
         phys_tracks = cv2.perspectiveTransform(reshaped_tracks, self.homography_matrix)
-        # Convert from mm (which dst_pts uses) to cm
-        phys_tracks = phys_tracks / 10.0
         return phys_tracks.reshape(N, T, 2)
 
     def save_tracks(self, base_name, tracks, fps):
@@ -313,7 +312,7 @@ class Analyzer:
         plt.close()
         return plot_path
 
-    def calculate_intensity(self, tracks, fps, pixels_to_mm=None):
+    def calculate_intensity(self, tracks, fps):
         """
         理清烈度计算的全流程逻辑:
         1. (已提前处理) 轨迹映射：外部已完成单应矩阵转换，输入 tracks 直接为物理坐标 (cm)。
@@ -339,8 +338,8 @@ class Analyzer:
             else:
                 mean_phys_tracks[t] = mean_phys_tracks[t-1] if t > 0 else np.array([0, 0])
 
-        # 获取相对起始点的位移 (Relative Displacement)
-        disp_mm = (mean_phys_tracks - mean_phys_tracks[0])
+        # 获取相对起始点的位移 (Relative Displacement) in cm
+        disp_cm = (mean_phys_tracks - mean_phys_tracks[0])
         
         # (已移除 scipy detrend 强制去漂移逻辑，纯粹展示运动)
 
@@ -365,13 +364,13 @@ class Analyzer:
                 return filtered
             return data
 
-        disp_mm_smooth = np.zeros_like(disp_mm)
-        disp_mm_smooth[:, 0] = lowpass_filter(disp_mm[:, 0], cutoff, fs=fps)
-        disp_mm_smooth[:, 1] = lowpass_filter(disp_mm[:, 1], cutoff, fs=fps)
+        disp_cm_smooth = np.zeros_like(disp_cm)
+        disp_cm_smooth[:, 0] = lowpass_filter(disp_cm[:, 0], cutoff, fs=fps)
+        disp_cm_smooth[:, 1] = lowpass_filter(disp_cm[:, 1], cutoff, fs=fps)
 
         # --- Step 3: 运动学推导 (Kinematics Calculation) ---
         # 速度 v = ∆d / ∆t (cm/s)
-        vel = np.diff(disp_mm_smooth, axis=0) / dt
+        vel = np.diff(disp_cm_smooth, axis=0) / dt
         # 再次滤波：消除一阶导数产生的噪声
         vel[:, 0] = lowpass_filter(vel[:, 0], cutoff, fs=fps)
         vel[:, 1] = lowpass_filter(vel[:, 1], cutoff, fs=fps)

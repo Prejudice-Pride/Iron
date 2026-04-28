@@ -149,9 +149,9 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
 
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
-            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+            [0, 0], [1.5, 0], [1.5, 6.0], [88.0, 6.0], [88.0, 15.0], [86.5, 15.0], [88.0, 24.0]
         ]
 
         analyzer.setup_calibration(src_calib, dst_calib)
@@ -163,9 +163,9 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
 
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
-            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+            [0, 0], [15, 0], [15, 60], [880, 6.0], [880, 150], [865, 150], [880, 240]
         ]
 
         analyzer.setup_calibration(src_calib, dst_calib)
@@ -177,9 +177,9 @@ def main():
             [478, 482], [656, 478], [597, 436], [688, 393]
         ]
 
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
-            [0, 0], [220, 600], [110, 270], [220, 600]
+            [0, 0], [22.0, 60.0], [11.0, 27.0], [22.0, 60.0]
         ]
 
         analyzer.setup_calibration(src_calib, dst_calib)
@@ -189,7 +189,7 @@ def main():
         # Source Pixels (Extracted manually)
         src_pts = [[435, 753], [1312, 728], [1515, 668], [1587, 818], [1641, 785], [1765, 733], [1806, 711]]
 
-        dst_pts = [[0, 0], [525, 330], [875, 330], [450, 630], [600, 630], [800, 630], [950, 630]]
+        dst_pts = [[0, 0], [52.5, 33.0], [87.5, 33.0], [45.0, 63.0], [60.0, 63.0], [80.0, 63.0], [95.0, 63.0]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
 
@@ -205,9 +205,9 @@ def main():
         [[1121, 953], [1133, 951], [990, 811], [998, 809], [1765, 833], [1771, 830], [1568, 759], [1575, 757], [873, 686], [882, 685], [833, 641], [841, 641]]
         dst_pts = [
             [0, 0],
-            [415, 0],
-            [415, 200],
-            [0, 200],
+            [41.5, 0],
+            [41.5, 20.0],
+            [0, 20.0],
         ]
 
         analyzer.setup_calibration(src_pts, dst_pts)
@@ -216,43 +216,48 @@ def main():
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
-        dst_pts = [[0, 0], [15, 0], [0, 60], [15, 60], [865, 0], [880, 0], [865, 60], [880, 60], [0, 150], [15, 150], [0, 210], [15, 210], [865, 150], [880, 150], [865, 210], [880, 210]]
+        dst_pts = [[0, 0], [1.5, 0], [0, 6.0], [1.5, 6.0], [86.5, 0], [88.0, 0], [86.5, 6.0], [88.0, 6.0], [0, 15.0], [1.5, 15.0], [0, 21.0], [1.5, 21.0], [86.5, 15.0], [88.0, 15.0], [86.5, 21.0], [88.0, 21.0]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
     elif base_name == "cond" :
         print("\n[INFO] Applying Engineered Calibration for cond1.mp4...")
         src_pts = [[740, 674], [678, 1015], [1057, 1021], [1026, 678]]
-        dst_pts = [[0, 0], [18, 0], [18, 14], [0, 14]]
+        # dst_pts provided in cm
+        dst_pts = [[0, 0], [18.0, 0], [18.0, 14.0], [0, 14.0]]
         
         analyzer.setup_calibration(src_pts, dst_pts)
 
     elif base_name == "cond1" :
         print("\n[INFO] Applying Engineered Calibration for cond1.mp4...")
         src_pts = [[740, 674], [716, 804], [808, 808], [1070, 702]]
-        dst_pts = [[0, 0], [8, 0], [8, 4], [2, 16]]
+        # dst_pts provided in cm
+        dst_pts = [[0, 0], [8.0, 0], [8.0, 4.0], [2.0, 16.0]]
         
         analyzer.setup_calibration(src_pts, dst_pts)
         
     elif base_name == "cond2":
         print("\n[INFO] Applying Engineered Calibration for cond2.mp4...")
         src_pts = [[688, 669], [715, 806], [802, 596], [1071, 703]]
-        dst_pts = [[0, 0], [8, 0], [8, 4], [2, 16]]
+        # dst_pts provided in cm
+        dst_pts = [[0, 0], [8.0, 0], [8.0, 4.0], [2.0, 16.0]]
         analyzer.setup_calibration(src_pts, dst_pts)
         
     elif base_name == "cond3":
         print("\n[INFO] Applying Engineered Calibration for cond3.mp4...")
         src_pts = [[740, 670], [692, 937], [1049, 944], [1026, 677]]
-        dst_pts = [[0, 0], [18, 0], [18, 14], [0, 14]]
+        # dst_pts provided in cm
+        dst_pts = [[0, 0], [18.0, 0], [18.0, 14.0], [0, 14.0]]
         analyzer.setup_calibration(src_pts, dst_pts)
     
     elif base_name == "cond4":
         print("\n[INFO] Applying Engineered Calibration for cond4.mp4...")
         src_pts = [[688, 669], [644, 994], [1024, 995], [981, 671]]
-        dst_pts = [[0, 0], [18, 0], [18, 14], [0, 14]]
+        # dst_pts provided in cm
+        dst_pts = [[0, 0], [18.0, 0], [18.0, 14.0], [0, 14.0]]
         analyzer.setup_calibration(src_pts, dst_pts)
 
     else:
-        print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
+        print("\n[INFO] No specific calibration found for this video. Using linear fallback (1.0 cm/pixel).")
 
     # 5. Corner Point Sampling
     print("Loading corner points...")

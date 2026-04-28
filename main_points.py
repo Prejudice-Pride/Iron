@@ -125,7 +125,7 @@ def main():
         
         # Destination Physical Coordinates (mm)
         dst_calib = [
-            [0, 0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+            [0.0, 0.0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
         ]
         
         analyzer.setup_calibration(src_calib, dst_calib)
