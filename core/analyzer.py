@@ -369,21 +369,17 @@ class Analyzer:
         disp_cm_smooth[:, 1] = lowpass_filter(disp_cm[:, 1], cutoff, fs=fps)
 
         # --- Step 3: 运动学推导 (Kinematics Calculation) ---
-        # 速度 v = ∆d / ∆t (cm/s)
-        vel = np.diff(disp_cm_smooth, axis=0) / dt
+        # 修正版：居中二阶精度的差分离散，不破坏长度，能缓解高频放大
+        vel = np.gradient(disp_cm_smooth, dt, axis=0)
         # 再次滤波：消除一阶导数产生的噪声
         vel[:, 0] = lowpass_filter(vel[:, 0], cutoff, fs=fps)
         vel[:, 1] = lowpass_filter(vel[:, 1], cutoff, fs=fps)
         
         # 加速度 a = ∆v / ∆t (cm/s^2 = Gal)
-        acc = np.diff(vel, axis=0) / dt
+        acc = np.gradient(vel, dt, axis=0)
         # 再次滤波：消除二阶导数极其严重的放大噪声
         acc[:, 0] = lowpass_filter(acc[:, 0], cutoff, fs=fps)
         acc[:, 1] = lowpass_filter(acc[:, 1], cutoff, fs=fps)
-        
-        # 对齐长度
-        vel = np.vstack([vel, [0, 0]])
-        acc = np.vstack([acc, [0, 0], [0, 0]])
 
         # --- Step 4: 峰值特征提取 (Peak Feature Extraction) ---
         # 计算全序列的合成加速度和速度模长
@@ -479,7 +475,7 @@ class Analyzer:
         print("\n" + "="*70)
         print("地震烈度多维度分析报告 (Multi-Dimensional Seismic Analysis)")
         print("="*70)
-        cal_mode = "透视变换 (Homography)" if self.homography_matrix is not None else f"线性缩放 ({self.pixels_to_mm_fallback} mm/pix)"
+        cal_mode = "透视变换 (Homography)" if self.homography_matrix is not None else f"线性缩放 ({self.pixels_to_cm_fallback} cm/pix)"
         print(f"校准模式: {cal_mode}")
         print(f"分析窗口: 2.0s ({window_size} 帧)")
         print("-" * 70)

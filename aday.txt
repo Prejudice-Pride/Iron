@@ -1,1 +1,82 @@
-pample2消融实验
+(iron) 
+Administrator@MARKOV MINGW64 ~/Desktop/Princess/TheForge/Iron (Automatic)
+$ python main_nocancel.py 
+C:\Users\Administrator\Desktop\Princess\TheForge\Iron\co-tracker
+Processing: discussion\videos\cond1.mp4
+Output to: output\cond1_output
+Loading model on cuda from C:\Users\Administrator\Desktop\Princess\TheForge\Iron\co-tracker\checkpoints\scaled_offline.pth
+Engine, and Analyzer are loaded successfully!
+Reading frames...
+Frames: T=1572, HxW=1920x1080, fps=60.16939116216702
+Found distortion params: output\calibration_debug\distortion_params.json. Applying correction...
+Applying distortion correction to all frames (this may take a while)...
+Distortion correction applied to frames.
+
+--- Applying Image Enhancement ---
+Applying image enhancements (CLAHE=True, Bilateral=False)...
+Image enhancement complete.
+Loading corner points...
+Loaded 1 Target points.
+Loaded 0 Reference points.
+
+[INFO] Applying Engineered Calibration for cond1.mp4...
+[Analyzer] Calibration established using 4/4 points (RANSAC).
+Loading corner points...
+Loaded 1 Target points.
+Loaded 0 Reference points.
+Tracking video...
+Processing video in chunks (stable mode)...
+  Chunk: 0 → 150
+  Chunk: 130 → 280
+  Chunk: 260 → 410
+  Chunk: 390 → 540
+  Chunk: 520 → 670
+  Chunk: 650 → 800
+  Chunk: 780 → 930
+  Chunk: 910 → 1060
+  Chunk: 1040 → 1190
+  Chunk: 1170 → 1320
+  Chunk: 1300 → 1450
+  Chunk: 1430 → 1572
+Tracking complete. Shape: (1, 1572, 2)
+Converting absolute trajectories from pixels to cm...
+Saving RAW results...
+Saving TARGET results...
+Saved tracked results to output\cond1_output\cond1_tracked_surface_tracks.npz
+Generating side-by-side visualization for 1572 frames...
+[2026-05-06 11:24:51.059] 开始处理
+[2026-05-06 11:26:14.347] 处理结束
+Saved visualization to output\cond1_output\tracking_vis_cond1.mp4
+Saved Waveform to output\cond1_output\cond1_tracked_surface_waveform.csv
+
+--- Performing Advanced Analysis on Tracked Results ---
+Saved Double Waveform Plot to output\cond1_output\cond1_tracked_double_waveforms.png
+Saved Frequency Spectrum to output\cond1_output\cond1_tracked_spectrum.png
+
+======================================================================
+地震烈度多维度分析报告 (Multi-Dimensional Seismic Analysis)
+======================================================================
+校准模式: 透视变换 (Homography)
+分析窗口: 2.0s (120 帧)
+----------------------------------------------------------------------
+[方法 1] 传统峰值法 (PGA - Absolute Peak):
+   最大水平加速度: 129.43 cm/s^2 (129.43 Gal)
+   最大水平速度:   15.98 cm/s
+   >>> 评估烈度: 7 度
+----------------------------------------
+[方法 2] 统计百分位法 (P95 Robust Peak):
+   P95 加速度:     92.01 cm/s^2 (92.01 Gal)
+   >>> 评估烈度: 7 度 (更具抗噪性)
+----------------------------------------
+[方法 3] 有效设计加速度 (Effective Acceleration):
+   有效加速度:     97.08 cm/s^2 (97.08 Gal)
+   >>> 评估烈度: 7 度 (结构设计实际感受)
+======================================================================
+
+Intensity Analysis Complete for cond1.
+
+[TIP] For advanced analysis (Intensity, Spectrum, etc.), run:
+python analyze_results.py output\cond1_output\cond1_tracked_surface_tracks.npz
+(iron) 
+Administrator@MARKOV MINGW64 ~/Desktop/Princess/TheForge/Iron (Automatic)
+$
