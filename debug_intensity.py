@@ -126,23 +126,27 @@ def calculate_intensity_standalone(csv_path):
     max_disp_y = np.nanmax(y_disp)
     min_disp_y = np.nanmin(y_disp)
     
+    x_raw = df['mean_x'].values
+    x_disp = x_raw - np.nanmean(x_raw)
+    max_disp_x = np.nanmax(x_disp)
+    min_disp_x = np.nanmin(x_disp)
+    
     print(f"1. 位移分析:")
-    print(f"   CSV中的最大 Y 轴位移 (正向): {max_disp_y:.3f} cm")
-    print(f"   CSV中的最大 Y 轴位移 (负向): {min_disp_y:.3f} cm")
-    print(f"   基于位移的预期幅值 (A = (Max-Min)/2): {(max_disp_y - min_disp_y)/2:.3f} cm")
+    print(f"   CSV中 Y 轴位移幅度: {min_disp_y:.3f} 到 {max_disp_y:.3f} cm, 单强: {(max_disp_y - min_disp_y)/2:.3f} cm")
+    print(f"   CSV中 X 轴位移幅度: {min_disp_x:.3f} 到 {max_disp_x:.3f} cm, 单强: {(max_disp_x - min_disp_x)/2:.3f} cm")
     print(f"   采样率 (FPS): {fps:.2f} Hz, 采样间隔 (dt): {dt:.4f} s")
     
     # 速度分析
     vel_raw = np.gradient(disp_cm[:, 1], dt)
-    print(f"\n2. 速度分析 (Y轴):")
-    print(f"   原始微积分最大速度: {np.nanmax(np.abs(vel_raw)):.3f} cm/s")
-    print(f"   滤波后最大速度 (cutoff={cutoff}Hz): {np.nanmax(np.abs(vel_new[:, 1])):.3f} cm/s")
+    print(f"\n2. 速度分析 (X与Y轴):")
+    print(f"   滤波后最大速度 X: {np.nanmax(np.abs(vel_new[:, 0])):.3f} cm/s")
+    print(f"   滤波后最大速度 Y: {np.nanmax(np.abs(vel_new[:, 1])):.3f} cm/s")
     
     # 加速度分析
     acc_raw = np.gradient(vel_raw, dt)
-    print(f"\n3. 加速度分析 (Y轴):")
-    print(f"   原始二次微积分最大加速度: {np.nanmax(np.abs(acc_raw)):.3f} cm/s^2 (这个值通常会因为高频噪声非常大)")
-    print(f"   单次滤波后最大加速度: {np.nanmax(np.abs(acc_new[:, 1])):.3f} cm/s^2")
+    print(f"\n3. 加速度分析 (X与Y轴):")
+    print(f"   单次滤波后最大加速度 X: {np.nanmax(np.abs(acc_new[:, 0])):.3f} cm/s^2")
+    print(f"   单次滤波后最大加速度 Y: {np.nanmax(np.abs(acc_new[:, 1])):.3f} cm/s^2")
     
     print("\n" + "="*70)
     print("调试脚本 - 烈度算法对比 (原版差分 vs. Gradient差分)")
@@ -164,4 +168,9 @@ def calculate_intensity_standalone(csv_path):
     print("="*70 + "\n")
 
 if __name__ == "__main__":
-    calculate_intensity_standalone("output/cond1_output/cond1_tracked_surface_waveform.csv")
+    import sys
+    if len(sys.argv) > 1:
+        path = sys.argv[1]
+    else:
+        path = "output/cond1_output/cond1_tracked_surface_waveform.csv"
+    calculate_intensity_standalone(path)

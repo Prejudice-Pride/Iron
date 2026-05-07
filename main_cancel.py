@@ -173,9 +173,9 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
         
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm) (DIVIDED BY 10 to correct mm->cm)
         dst_calib = [
-            [0.0, 0.0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+            [0.0, 0.0], [1.5, 0], [1.5, 6.0], [88.0, 6.0], [88.0, 15.0], [86.5, 15.0], [88.0, 24.0]
         ]
         
         analyzer.setup_calibration(src_calib, dst_calib)
@@ -186,13 +186,13 @@ def main():
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
         
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
-            [0.0, 0.0], [15, 0], [15, 60], [880, 60], [880, 150], [865, 150], [880, 240]
+            [0.0, 0.0], [1.5, 0], [1.5, 6.0], [88.0, 6.0], [88.0, 15.0], [86.5, 15.0], [88.0, 24.0]
         ]
         
         analyzer.setup_calibration(src_calib, dst_calib)
-        
+
     elif base_name == "sample2":
         print("\n[INFO] Applying Engineered Calibration for sample2.mp4...")
         # Source Pixels (Extracted manually)
@@ -200,52 +200,45 @@ def main():
             [478, 482], [656, 478], [597, 436], [688, 393]
         ]
         
-        # Destination Physical Coordinates (mm)
+        # Destination Physical Coordinates (cm)
         dst_calib = [
-            [0.0, 0.0], [220, 600], [110, 270], [220, 600]
+            [0.0, 0.0], [22.0, 60.0], [11.0, 27.0], [22.0, 60.0]
         ]
         
         analyzer.setup_calibration(src_calib, dst_calib)
-        
+
     elif base_name == "sample3":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[435, 753], [1312, 728], [1515, 668], [1587, 818], [1641, 785], [1765, 733], [1806, 711]]
         
-        dst_pts = [[0.0, 0.0],[525,330],[875,330],[450,630],[600,630],[800,630],[950,630]]
+        dst_pts = [[0.0, 0.0],[52.5, 33.0],[87.5, 33.0],[45.0, 63.0],[60.0, 63.0],[80.0, 63.0],[95.0, 63.0]]
         
         analyzer.setup_calibration(src_pts, dst_pts)
-        
+
     elif base_name == "sample4":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [
-            [402, 430],
-            [1045, 398],
-            [1300, 594],
+            [402, 430], 
+            [1045, 398], 
+            [1300, 594], 
             [500, 623], 
         ]
         [[1121, 953], [1133, 951], [990, 811], [998, 809], [1765, 833], [1771, 830], [1568, 759], [1575, 757], [873, 686], [882, 685], [833, 641], [841, 641]]
         dst_pts = [
         [0.0, 0.0],
-        [415, 0],
-        [415, 200],
-        [0, 200],]
+        [41.5, 0],
+        [41.5, 20.0],
+        [0, 20.0],]
         
         analyzer.setup_calibration(src_pts, dst_pts)
-        
+
     elif base_name == "qample2":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
-        dst_pts = [[0.0, 0.0],[15,0],[0,60],[15,60],[865,0],[880,0],[865,60],[880,60],[0,150],[15,150],[0,210],[15,210],[865,150],[880,150],[865,210],[880,210]]
-
-        analyzer.setup_calibration(src_pts, dst_pts)
-        
-    else:
-        print("\n[INFO] No specific calibration found for this video. Using linear fallback (10mm/pixel).")
-
-    # 5. Point Detection
+        dst_pts = [[0.0, 0.0],[1.5,0],[0,6.0],[1.5,6.0],[86.5,0],[88.0,0],[86.5,6.0],[88.0,6.0],[0,15.0],[1.5,15.0],[0,21.0],[1.5,21.0],[86.5,15.0],[88.0,15.0],[86.5,21.0],[88.0,21.0]]
     # Detect independently to know which is which
     print("Detecting points...")
     roi_target = rois[0]
@@ -315,20 +308,14 @@ def main():
     print(f"Y-Axis Motion Correlation (Target vs Ref): {corr_y:.4f}")
 
     # 为 X 轴和 Y 轴分别计算独立的自适应抵消权重
-    # 如果相关性 < 0.1，权重视为 0（即视为噪音，不进行抵消，保护原数据）
-    # 如果相关性 > 0.5，权重为 100% 抵消
-    def get_axis_weight(corr):
-        if corr > 0.5:
-            return 1.0
-        elif corr > 0.1:
-            return (corr - 0.1) / 0.4
-        else:
-            return 0.0
-
-    weight_x = get_axis_weight(corr_x)
-    weight_y = get_axis_weight(corr_y)
+    # 如果存在极大的震荡但不具备非常严格的时间同步（比如只有 -0.1 到 0.2的弱相关），反而要直接扣除 100% 因为它几乎肯定是手抖相机造成的
+    # 而不是直接设置成 0 导致相机抖动直接漏到目标框！
+    # 这里修改：只要是手持视频防抖/取消，我们要无条件相信参考静止点（墙壁等）。任何在参考点上的运动都必须被100%扣除！
+    # 彻底关掉这层对低相关性的惩罚！因为手持视频的相机震动并不一定总是和平台物体的运动方向正相关。
+    weight_x = 1.0 # 强制完全抵消 X 轴相机抖动
+    weight_y = 1.0 # 强制完全抵消 Y 轴相机抖动
     
-    print(f"[评估] X轴抵消权重: {weight_x:.2f} | Y轴抵消权重: {weight_y:.2f}")
+    print(f"[评估] (优化设定) 已强制 X轴抵消权重: {weight_x:.2f} | Y轴抵消权重: {weight_y:.2f} (无条件采用环境静止参考进行刚体抵消)")
 
     # 创建 [T, 2] 的动态掩码矩阵
     cancel_weight_matrix = np.array([weight_x, weight_y])
