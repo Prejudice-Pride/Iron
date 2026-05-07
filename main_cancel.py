@@ -169,14 +169,10 @@ def main():
     if base_name == "sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
-        src_calib = [
-            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
-        ]
+        src_calib = [[281, 867], [295, 870], [619, 720], [1156, 924], [1321, 704], [1310, 703], [1381, 621], [1437, 542]]
         
         # Destination Physical Coordinates (cm) (DIVIDED BY 10 to correct mm->cm)
-        dst_calib = [
-            [0.0, 0.0], [1.5, 0], [1.5, 6.0], [88.0, 6.0], [88.0, 15.0], [86.5, 15.0], [88.0, 24.0]
-        ]
+        dst_calib = [[0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 240], [0,60]]
         
         analyzer.setup_calibration(src_calib, dst_calib)
     elif base_name == "old_sample":
@@ -321,9 +317,19 @@ def main():
     cancel_weight_matrix = np.array([weight_x, weight_y])
 
     # --- C. 亚像素平滑滤波 (Low-pass Filter) ---
-    # 移除强制高斯平滑，让原汁原味的相机高频抖动能够去抵消目标中的同频抖动
-    print("[滤噪] 移除对参考框位移的高斯平滑滤波处理，保留高频相机抖动以进行完全抵消。")
-    avg_camera_shift_smooth = avg_camera_shift
+    print("[滤噪] 对参考框(墙面)进行物理低通滤波，避免扣除过程中引入相机独立的高阶测量噪声叠加。")
+    from scipy.signal import butter, filtfilt
+    def lowpass_filter(data, cutoff=4.0, fs=25.0, order=4):
+        nyq = 0.5 * fs
+        effective_cutoff = min(cutoff, nyq * 0.9)
+        if effective_cutoff <= 0: return data
+        normal_cutoff = effective_cutoff / nyq
+        b, a = butter(order, normal_cutoff, btype='low', analog=False)
+        return filtfilt(b, a, data)
+
+    avg_camera_shift_smooth = np.zeros_like(avg_camera_shift)
+    avg_camera_shift_smooth[:, 0] = lowpass_filter(avg_camera_shift[:, 0], cutoff=4.0, fs=fps)
+    avg_camera_shift_smooth[:, 1] = lowpass_filter(avg_camera_shift[:, 1], cutoff=4.0, fs=fps)
 
     # --- D. 修正核心轨迹应用 (独立分通道抵消) ---
     # 这一步非常关键：分别乘以对应的轴向权重，对于负相关轴，偏移直接置0

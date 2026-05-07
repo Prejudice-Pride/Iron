@@ -345,7 +345,7 @@ class Analyzer:
 
         # --- (Optional) Signal Smoothing: 应用低通滤波以抑制求导放大的高频噪声 ---
         
-        cutoff = 10.0
+        cutoff = 3.0
         
         from scipy.signal import butter, filtfilt
         def lowpass_filter(data, cutoff, fs=30.0, order=4):
