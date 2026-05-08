@@ -38,7 +38,7 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample.mp4"
+DEFAULT_VIDEO = "pample2.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -230,11 +230,29 @@ def main():
         
         analyzer.setup_calibration(src_pts, dst_pts)
 
+    elif base_name == "qample":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
+        dst_pts = [[0,0],[5,0],[65,15],[70,15],[0,90],[5,90],[65,105],[75,105],[0,150],[5,150],[65,165],[70,165]]
+
     elif base_name == "qample2":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
-        src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
-        dst_pts = [[0.0, 0.0],[1.5,0],[0,6.0],[1.5,6.0],[86.5,0],[88.0,0],[86.5,6.0],[88.0,6.0],[0,15.0],[1.5,15.0],[0,21.0],[1.5,21.0],[86.5,15.0],[88.0,15.0],[86.5,21.0],[88.0,21.0]]
+        src_pts = [[1120, 950], [1132, 948], [989, 808], [1000, 808], [1561, 756], [1568, 755], [874, 687], [880, 687], [835, 642], [840, 642],[1322, 666], [1327, 665], [1216, 628], [1222, 626]]
+        dst_pts = [[0, 0], [5, 0], [0, 60], [5, 60], [190, 60], [195, 60], [0, 150], [5, 150], [0, 210], [5, 210],[190, 150],[195, 150],[190, 210],[195, 210]]
+        
+    elif base_name == "qample2":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
+        dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
+        
+    elif base_name == "pample2":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
+        dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
     # Detect independently to know which is which
     print("Detecting points...")
     roi_target = rois[0]
@@ -303,15 +321,27 @@ def main():
     print(f"X-Axis Motion Correlation (Target vs Ref): {corr_x:.4f}")
     print(f"Y-Axis Motion Correlation (Target vs Ref): {corr_y:.4f}")
 
-    # 为 X 轴和 Y 轴分别计算独立的自适应抵消权重
-    # 如果存在极大的震荡但不具备非常严格的时间同步（比如只有 -0.1 到 0.2的弱相关），反而要直接扣除 100% 因为它几乎肯定是手抖相机造成的
-    # 而不是直接设置成 0 导致相机抖动直接漏到目标框！
-    # 这里修改：只要是手持视频防抖/取消，我们要无条件相信参考静止点（墙壁等）。任何在参考点上的运动都必须被100%扣除！
-    # 彻底关掉这层对低相关性的惩罚！因为手持视频的相机震动并不一定总是和平台物体的运动方向正相关。
-    weight_x = 1.0 # 强制完全抵消 X 轴相机抖动
-    weight_y = 1.0 # 强制完全抵消 Y 轴相机抖动
+    # === 重新启用的自适应抵消逻辑 ===
+    # 物理原则：如果参考与目标的位移相关性是负的或接近0，说明此时占据主导的不是相机平移共模摇晃
+    # (极大概率是独立噪底或旋转偏差)。此时强行扣除 1.0 会放大噪声。
     
-    print(f"[评估] (优化设定) 已强制 X轴抵消权重: {weight_x:.2f} | Y轴抵消权重: {weight_y:.2f} (无条件采用环境静止参考进行刚体抵消)")
+    # 建立一条分段函数或平滑截断函数：
+    # r > 0.5 时，我们认为是真实的宏观相机晃动，采用 1.0 完全抵消
+    # 0 < r <= 0.5 时，进行平滑衰减，避免引入过多异向噪底
+    # r <= 0 时（反方向运动），关闭抵消 (0.0) 或保持极低权重
+    
+    def adaptive_weight(r):
+        if r > 0.5:
+            return 1.0
+        elif r > 0:
+            return r * 2.0  # 线性映射到 0~1 的权重
+        else:
+            return 0.0      # 负相关时彻底切断，防止噪声反向注入叠加
+
+    weight_x = adaptive_weight(corr_x)
+    weight_y = adaptive_weight(corr_y)
+    
+    print(f"[评估] (自适应修正) 实际采用 X轴抵消权重: {weight_x:.3f} | Y轴抵消权重: {weight_y:.3f}")
 
     # 创建 [T, 2] 的动态掩码矩阵
     cancel_weight_matrix = np.array([weight_x, weight_y])

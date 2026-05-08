@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.signal import butter, filtfilt, correlate, coherence
+from scipy.signal import butter, filtfilt, correlate, coherence, welch
 from scipy.integrate import cumulative_trapezoid
 from scipy.fft import rfft, rfftfreq
 from scipy.stats import wasserstein_distance
@@ -14,6 +14,7 @@ from scipy.spatial.distance import euclidean, cosine
 # Video axis mapping configurations based on video name
 VIDEO_AXIS_CONFIGS = {
     "sample": {"x_map": "NS", "y_map": "WE"},
+    "sample3": {"x_map": "SN", "y_map": "WE"},
     "qample": {"x_map": "NS", "y_map": "WE"},
     "pample2": {"x_map": "NS", "y_map": "WE"},
     "qample2": {"x_map": "SN", "y_map": "EW"},
@@ -21,8 +22,8 @@ VIDEO_AXIS_CONFIGS = {
 
 # Setup Argument Parser for Automation
 parser = argparse.ArgumentParser(description="Evaluate visual tracking vs seismic data.")
-parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p1_206b.txt", help="Path to ground truth seismic txt")
-parser.add_argument("--visual_csv", type=str, default=r"output\sample_output_cancel\sample_corrected_surface_waveform.csv", help="Path to visual tracking csv")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p2_206b.txt", help="Path to ground truth seismic txt")
+parser.add_argument("--visual_csv", type=str, default=r"output\sample_p2_output_cancel\sample_reference_surface_waveform.csv", help="Path to visual tracking csv")
 parser.add_argument("--out_img", type=str, default="output/visual_vs_seismic_alignment_with_fft.png", help="Path to save output comparison image")
 parser.add_argument("--visual_x_maps_to", type=str, default=None, help="Axis mapping for X (optional, auto-detected from filename if not provided)")
 parser.add_argument("--visual_y_maps_to", type=str, default=None, help="Axis mapping for Y (optional, auto-detected from filename if not provided)")
@@ -155,12 +156,9 @@ def align_and_evaluate(ref_signal, test_signal, forced_shift=None, shift_min=Non
 
 def compute_fft(signal_data, fs):
     n = len(signal_data)
-    window = np.hanning(n)
-    signal_windowed = signal_data * window
-    yf = rfft(signal_windowed)
-    xf = rfftfreq(n, 1 / fs)
-    amp = np.abs(yf)
-    amp = amp / np.max(amp)
+    nperseg = max(64, n // 3)
+    xf, pxx = welch(signal_data, fs=fs, nperseg=nperseg)
+    amp = pxx / np.max(pxx)
     peak_idx = np.argmax(amp[1:]) + 1
     peak_freq = xf[peak_idx]
     return xf, amp, peak_freq
@@ -353,40 +351,56 @@ def main():
     print("="*80 + "\n")
 
     print("8. Plotting comparisons...")
-    plt.figure(figsize=(16, 12))
-    
+    plt.figure(figsize=(16, 18))
+
     t_plot_x = np.arange(len(ref_x)) * SEISMIC_DT
     t_plot_y = np.arange(len(ref_y)) * SEISMIC_DT
 
-    plt.subplot(4, 1, 1)
-    plt.title(f"X-Axis Time Domain | Shift: {shift_x * SEISMIC_DT:.3f}s | R: {r_x:.4f} (Window {EVAL_DURATION_SEC}s)")
+    plt.subplot(6, 1, 1)
+    plt.title(f"X-Axis Time Domain")
     plt.plot(t_plot_x, ref_x, label=f"Seismometer {VISUAL_X_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(t_plot_x, test_x, label="Visual X", color='blue', alpha=0.8, linestyle='--')
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
-    plt.subplot(4, 1, 2)
-    plt.title(f"Y-Axis Time Domain | Shift: {shift_y * SEISMIC_DT:.3f}s | R: {r_y:.4f} (Window {EVAL_DURATION_SEC}s)")
+    plt.subplot(6, 1, 2)
+    plt.title(f"Y-Axis Time Domain")
     plt.plot(t_plot_y, ref_y, label=f"Seismometer {VISUAL_Y_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(t_plot_y, test_y, label="Visual Y", color='red', alpha=0.8, linestyle='--')
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
-    plt.subplot(4, 1, 3)
-    plt.title("X-Axis Frequency Spectrum")
+    plt.subplot(6, 1, 3)
+    plt.title("X-Axis Frequency Spectrum (Welch PSD)")
     plt.plot(freq_seis_x, amp_seis_x, label=f"Seis {VISUAL_X_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(freq_vis_x, amp_vis_x, label="Visual X", color='blue', alpha=0.8)
     plt.xlim(0, 10)
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
-    plt.subplot(4, 1, 4)
-    plt.title("Y-Axis Frequency Spectrum")
+    plt.subplot(6, 1, 4)
+    plt.title("Y-Axis Frequency Spectrum (Welch PSD)")
     plt.plot(freq_seis_y, amp_seis_y, label=f"Seis {VISUAL_Y_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(freq_vis_y, amp_vis_y, label="Visual Y", color='red', alpha=0.8)
     plt.xlim(0, 10)
-    plt.xlabel("Frequency (Hz)")
     plt.legend(loc="upper right")
+    plt.grid(True, linestyle=':', alpha=0.7)
+
+    plt.subplot(6, 1, 5)
+    plt.title("X-Axis Magnitude-Squared Coherence (MSC)")
+    plt.plot(f_coh_x, Cxy_x, color='blue', alpha=0.8)
+    plt.xlim(0, 10)
+    plt.ylim(0, 1.05)
+    plt.ylabel("Coherence")
+    plt.grid(True, linestyle=':', alpha=0.7)
+
+    plt.subplot(6, 1, 6)
+    plt.title("Y-Axis Magnitude-Squared Coherence (MSC)")
+    plt.plot(f_coh_y, Cxy_y, color='red', alpha=0.8)
+    plt.xlim(0, 10)
+    plt.ylim(0, 1.05)
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Coherence")
     plt.grid(True, linestyle=':', alpha=0.7)
 
     plt.tight_layout()

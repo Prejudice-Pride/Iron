@@ -4,7 +4,7 @@ import os
 import json
 
 
-image_path = "discussion\\videos\cond1.mp4"
+image_path = "input_videos\qample2.mp4"
 
 from calibration import undistort_image_manual, load_distortion_params
 
@@ -276,13 +276,13 @@ def select_lines_from_media(media_path):
 def main():
     
     
-    # boxes = select_boxes_from_media(image_path)
-    # print("All selected boxes:", boxes)
+    boxes = select_boxes_from_media(image_path)
+    print("All selected boxes:", boxes)
     
     # lines = select_lines_from_media(image_path)
     
-    points = select_coords_from_media(image_path)
-    print("All selected points:", points)
+    # points = select_coords_from_media(image_path)
+    # print("All selected points:", points)
 
 if __name__ == '__main__':
     main()
