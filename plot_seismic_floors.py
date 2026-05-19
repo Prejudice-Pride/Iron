@@ -45,7 +45,7 @@ def compute_fft(signal_data, fs):
 def main():
     parser = argparse.ArgumentParser(description="Plot multi-floor seismic ground truth.")
     parser.add_argument("--txt_dir", type=str, default="txt_home", help="Directory containing txt files")
-    parser.add_argument("--video_name", type=str, default="pample2", help="Base name of the video/experiment (e.g., sample_p2)")
+    parser.add_argument("--video_name", type=str, default="sample_full", help="Base name of the video/experiment (e.g., sample_p2)")
     parser.add_argument("--axis", type=str, choices=["NS", "EW"], default="NS", help="Axis to plot (NS or EW)")
     parser.add_argument("--out_img", type=str, default="output/seismic_multi_floor.png", help="Path to save output image")
     args = parser.parse_args()

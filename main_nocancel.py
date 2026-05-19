@@ -33,8 +33,8 @@ from utils.visualizer import visualize_tracks
 from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
-INPUT_DIR = "discussion\\videos"
-DEFAULT_VIDEO = "cond1.mp4"
+INPUT_DIR = "input_videos"
+DEFAULT_VIDEO = "sample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -78,9 +78,10 @@ def main():
     print(f"Output to: {out_dir}")
 
     # 2. Logic Setup
+    sampler = Sampler(roi_dir="rois")
     engine = TrackingEngine()
     analyzer = Analyzer(output_dir=out_dir)
-    print("Engine, and Analyzer are loaded successfully!")
+    print("Sampler, Engine, and Analyzer are loaded successfully!")
 
     # 3. Read Video
     print("Reading frames...")
@@ -120,19 +121,44 @@ def main():
     # 这里默认启用 CLAHE 局部对比度增强，这有助于更稳定地检测弱纹理表面的角点
     frames = enhance_frames(frames, use_clahe=True, use_bilateral=False)
 
-    # 4. Corner Point Sampling
-    print("Loading corner points...")
-    corner_file = os.path.join("corner_points", f"{base_name}_corners.json")
-    if os.path.exists(corner_file):
-        with open(corner_file, 'r') as f:
-            pts_target = np.array(json.load(f))
-        pts_ref = np.array([])  # No reference points for nocancel
+    # 4. ROI Selection (Target)
+    ROI_SUFFIX = "_cancel_rois.json"
+    
+    # Try to load existing ROIs
+    rois, roi_path = sampler.load_rois(base_name, roi_suffix=ROI_SUFFIX)
+    
+    if rois is None:
+        print(f"\n--- ROI SELECTION REQUIRED ---")
+        print(f"No existing cancellation ROIs found for {base_name}.")
+        print("Please elect exactly 2 ROIs (Target then Reference), though we only use the Target here.")
+        
+        can_interactive = bool(os.environ.get('DISPLAY')) or (os.name == 'nt')
+        if not can_interactive:
+            print("Error: Running in headless mode and no ROI file found.")
+            sys.exit(1)
+            
+        rois = sampler.select_rois_interactive(frames[0], window_name="Select TARGET then REFERENCE")
+        
+        if not rois or len(rois) != 2:
+            print(f"Error: Expected exactly 2 ROIs, got {len(rois) if rois else 0}.")
+            sys.exit(1)
+            
+        sampler.save_rois(roi_path, rois)
+        print(f"Saved ROIs to {roi_path}")
     else:
-        print(f"Error: Corner points file not found: {corner_file}")
-        sys.exit(1)
+        print(f"Loaded rois from {roi_path}")
+        if len(rois) < 1:
+            print("Error: Insufficient ROIs.")
+            sys.exit(1)
 
-    print(f"Loaded {len(pts_target)} Target points.")
-    print(f"Loaded {len(pts_ref)} Reference points.")
+    print("Detecting points...")
+    roi_target = rois[0]
+    
+    pts_target = sampler.detect_roi_points_orb(frames[0], [roi_target], max_points=MAX_POINTS_TARGET)
+    pts_ref = np.array([])
+    
+    print(f"Detected {len(pts_target)} Target points.")
+    print(f"Detected {len(pts_ref)} Reference points.")
 
     if len(pts_target) == 0:
         print("Error: No target points found.")
@@ -145,29 +171,24 @@ def main():
     if base_name == "sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
-        src_calib = [
-            [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
-        ]
-
-        # Destination Physical Coordinates (cm)
-        dst_calib = [
-            [0, 0], [1.5, 0], [1.5, 6.0], [88.0, 6.0], [88.0, 15.0], [86.5, 15.0], [88.0, 24.0]
-        ]
-
+        src_calib = [[281, 867], [295, 870], [619, 720], [1156, 924], [1321, 704], [1310, 703], [1381, 621], [1437, 542]]
+        
+        # Destination Physical Coordinates (cm) (DIVIDED BY 10 to correct mm->cm)
+        dst_calib = [[0, 0], [5, 0], [5, 60], [135, 60], [135, 150], [130, 150], [135, 240], [0,60]]
+        
         analyzer.setup_calibration(src_calib, dst_calib)
-
     elif base_name == "old_sample":
         print("\n[INFO] Applying Engineered Calibration for sample.mp4...")
         # Source Pixels (Extracted manually)
         src_calib = [
             [297, 860], [308, 864], [620, 720], [1157, 921], [1319, 703], [1308, 702], [1377, 620]
         ]
-
+        
         # Destination Physical Coordinates (cm)
         dst_calib = [
-            [0, 0], [15, 0], [15, 60], [880, 6.0], [880, 150], [865, 150], [880, 240]
+            [0.0, 0.0], [1.5, 0], [1.5, 6.0], [88.0, 6.0], [88.0, 15.0], [86.5, 15.0], [88.0, 24.0]
         ]
-
+        
         analyzer.setup_calibration(src_calib, dst_calib)
 
     elif base_name == "sample2":
@@ -176,47 +197,64 @@ def main():
         src_calib = [
             [478, 482], [656, 478], [597, 436], [688, 393]
         ]
-
+        
         # Destination Physical Coordinates (cm)
         dst_calib = [
-            [0, 0], [22.0, 60.0], [11.0, 27.0], [22.0, 60.0]
+            [0.0, 0.0], [22.0, 60.0], [11.0, 27.0], [22.0, 60.0]
         ]
-
+        
         analyzer.setup_calibration(src_calib, dst_calib)
 
     elif base_name == "sample3":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [[435, 753], [1312, 728], [1515, 668], [1587, 818], [1641, 785], [1765, 733], [1806, 711]]
-
-        dst_pts = [[0, 0], [52.5, 33.0], [87.5, 33.0], [45.0, 63.0], [60.0, 63.0], [80.0, 63.0], [95.0, 63.0]]
-
+        
+        dst_pts = [[0.0, 0.0],[52.5, 33.0],[87.5, 33.0],[45.0, 63.0],[60.0, 63.0],[80.0, 63.0],[95.0, 63.0]]
+        
         analyzer.setup_calibration(src_pts, dst_pts)
 
     elif base_name == "sample4":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
         src_pts = [
-            [402, 430],
-            [1045, 398],
-            [1300, 594],
-            [500, 623],
+            [402, 430], 
+            [1045, 398], 
+            [1300, 594], 
+            [500, 623], 
         ]
         [[1121, 953], [1133, 951], [990, 811], [998, 809], [1765, 833], [1771, 830], [1568, 759], [1575, 757], [873, 686], [882, 685], [833, 641], [841, 641]]
         dst_pts = [
-            [0, 0],
-            [41.5, 0],
-            [41.5, 20.0],
-            [0, 20.0],
-        ]
-
+        [0.0, 0.0],
+        [41.5, 0],
+        [41.5, 20.0],
+        [0, 20.0],]
+        
         analyzer.setup_calibration(src_pts, dst_pts)
+
+    elif base_name == "qample":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[308, 1002], [325, 1003], [729, 960], [742, 960], [567, 753], [579, 754], [829, 743], [838, 743], [655, 668], [665, 668], [864, 662], [876, 662]]
+        dst_pts = [[0,0],[5,0],[65,15],[70,15],[0,90],[5,90],[65,105],[75,105],[0,150],[5,150],[65,165],[70,165]]
 
     elif base_name == "qample2":
         print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
         # Source Pixels (Extracted manually)
-        src_pts = [[1123, 953], [1133, 951], [988, 810], [998, 809], [1768, 833], [1773, 830], [1569, 759], [1574, 757], [876, 687], [880, 686], [833, 642], [840, 642], [1324, 667], [1327, 665], [1220, 627], [1224, 626]]
-        dst_pts = [[0, 0], [1.5, 0], [0, 6.0], [1.5, 6.0], [86.5, 0], [88.0, 0], [86.5, 6.0], [88.0, 6.0], [0, 15.0], [1.5, 15.0], [0, 21.0], [1.5, 21.0], [86.5, 15.0], [88.0, 15.0], [86.5, 21.0], [88.0, 21.0]]
+        src_pts = [[1120, 950], [1132, 948], [989, 808], [1000, 808], [1561, 756], [1568, 755], [874, 687], [880, 687], [835, 642], [840, 642],[1322, 666], [1327, 665], [1216, 628], [1222, 626]]
+        dst_pts = [[0, 0], [5, 0], [0, 60], [5, 60], [190, 60], [195, 60], [0, 150], [5, 150], [0, 210], [5, 210],[190, 150],[195, 150],[190, 210],[195, 210]]
+        
+    elif base_name == "qample2":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
+        dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
+        
+    elif base_name == "pample2":
+        print("\n[INFO] Applying Engineered Calibration for sample4.mp4...")
+        # Source Pixels (Extracted manually)
+        src_pts = [[320, 846], [364, 849], [693, 878], [740, 881], [315, 780], [333, 768], [582, 606], [594, 597]]
+        dst_pts = [[60,0],[90,0],[330,0],[360,0],[0,70],[0,100],[0,580],[0,610]]
 
         analyzer.setup_calibration(src_pts, dst_pts)
     elif base_name == "cond" :
@@ -258,27 +296,6 @@ def main():
 
     else:
         print("\n[INFO] No specific calibration found for this video. Using linear fallback (1.0 cm/pixel).")
-
-    # 5. Corner Point Sampling
-    print("Loading corner points...")
-    corner_file = os.path.join("corner_points", f"{base_name}_corners.json")
-    if os.path.exists(corner_file):
-        with open(corner_file, 'r') as f:
-            pts_target = np.array(json.load(f))
-        pts_ref = np.array([])  # No reference points for nocancel
-    else:
-        print(f"Error: Corner points file not found: {corner_file}")
-        sys.exit(1)
-
-    print(f"Loaded {len(pts_target)} Target points.")
-    print(f"Loaded {len(pts_ref)} Reference points.")
-
-    if len(pts_target) == 0:
-        print("Error: No target points found.")
-        sys.exit(1)
-
-    all_points = pts_target  # Only target points
-    num_target = len(pts_target)
 
     # 6. Tracking
     print("Tracking video...")

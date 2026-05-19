@@ -22,8 +22,8 @@ VIDEO_AXIS_CONFIGS = {
 
 # Setup Argument Parser for Automation
 parser = argparse.ArgumentParser(description="Evaluate visual tracking vs seismic data.")
-parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample_p2_206b.txt", help="Path to ground truth seismic txt")
-parser.add_argument("--visual_csv", type=str, default=r"output\sample_p2_output_cancel\sample_reference_surface_waveform.csv", help="Path to visual tracking csv")
+parser.add_argument("--seismic_txt", type=str, default=r"txt_home\sample3_206b.txt", help="Path to ground truth seismic txt")
+parser.add_argument("--visual_csv", type=str, default=r"output\sample3_output_cancel\sample3_corrected_surface_waveform.csv", help="Path to visual tracking csv")
 parser.add_argument("--out_img", type=str, default="output/visual_vs_seismic_alignment_with_fft.png", help="Path to save output comparison image")
 parser.add_argument("--visual_x_maps_to", type=str, default=None, help="Axis mapping for X (optional, auto-detected from filename if not provided)")
 parser.add_argument("--visual_y_maps_to", type=str, default=None, help="Axis mapping for Y (optional, auto-detected from filename if not provided)")
@@ -111,17 +111,23 @@ def align_and_evaluate(ref_signal, test_signal, forced_shift=None, shift_min=Non
         cc = correlate(ref_norm, test_norm, mode='full')
         lags = np.arange(-(len(test_norm) - 1), len(ref_norm))
 
-        if shift_min is not None or shift_max is not None:
-            if shift_min is None: shift_min = lags.min()
-            if shift_max is None: shift_max = lags.max()
-            valid_mask = (lags >= shift_min) & (lags <= shift_max)
-            if not np.any(valid_mask):
-                raise ValueError(f"No valid shift found in range [{shift_min}, {shift_max}].")
-            cc_valid = cc[valid_mask]
-            lags_valid = lags[valid_mask]
-            shift = lags_valid[np.argmax(cc_valid)]
-        else:
-            shift = lags[np.argmax(cc)]
+        valid_mask = np.ones(len(lags), dtype=bool)
+        
+        if shift_min is not None:
+            valid_mask &= (lags >= shift_min)
+        if shift_max is not None:
+            valid_mask &= (lags <= shift_max)
+            
+        if min_eval_samples is not None:
+            overlaps = np.minimum(len(ref_norm) - np.maximum(lags, 0), len(test_norm) - np.maximum(-lags, 0))
+            valid_mask &= (overlaps >= min_eval_samples)
+
+        if not np.any(valid_mask):
+            raise ValueError(f"No valid shift found. Range constraints or min_eval_samples ({min_eval_samples}) too strict.")
+
+        cc_valid = cc[valid_mask]
+        lags_valid = lags[valid_mask]
+        shift = lags_valid[np.argmax(cc_valid)]
     else:
         shift = forced_shift
 
@@ -360,6 +366,8 @@ def main():
     plt.title(f"X-Axis Time Domain")
     plt.plot(t_plot_x, ref_x, label=f"Seismometer {VISUAL_X_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(t_plot_x, test_x, label="Visual X", color='blue', alpha=0.8, linestyle='--')
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude (Z-score)")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
@@ -367,6 +375,8 @@ def main():
     plt.title(f"Y-Axis Time Domain")
     plt.plot(t_plot_y, ref_y, label=f"Seismometer {VISUAL_Y_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(t_plot_y, test_y, label="Visual Y", color='red', alpha=0.8, linestyle='--')
+    plt.xlabel("Time (s)")
+    plt.ylabel("Amplitude (Z-score)")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
@@ -375,6 +385,8 @@ def main():
     plt.plot(freq_seis_x, amp_seis_x, label=f"Seis {VISUAL_X_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(freq_vis_x, amp_vis_x, label="Visual X", color='blue', alpha=0.8)
     plt.xlim(0, 10)
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Normalized PSD")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
@@ -383,6 +395,8 @@ def main():
     plt.plot(freq_seis_y, amp_seis_y, label=f"Seis {VISUAL_Y_MAPS_TO}", color='black', alpha=0.7)
     plt.plot(freq_vis_y, amp_vis_y, label="Visual Y", color='red', alpha=0.8)
     plt.xlim(0, 10)
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Normalized PSD")
     plt.legend(loc="upper right")
     plt.grid(True, linestyle=':', alpha=0.7)
 
@@ -391,6 +405,7 @@ def main():
     plt.plot(f_coh_x, Cxy_x, color='blue', alpha=0.8)
     plt.xlim(0, 10)
     plt.ylim(0, 1.05)
+    plt.xlabel("Frequency (Hz)")
     plt.ylabel("Coherence")
     plt.grid(True, linestyle=':', alpha=0.7)
 
