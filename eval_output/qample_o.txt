@@ -60,3 +60,16 @@ $ python eval_full_compare.py
 Comparison plot saved to output/visual_vs_seismic_alignment_with_fft.png
 __RESULT_R_X__: 0.4806
 __RESULT_R_Y__: 0.3511
+
+[方法 1] 传统峰值法 (PGA - Absolute Peak):
+   最大水平加速度: 8.27 cm/s^2 (8.27 Gal)
+   最大水平速度:   2.12 cm/s
+   >>> 评估烈度: 4 度
+----------------------------------------
+[方法 2] 统计百分位法 (P95 Robust Peak):
+   P95 加速度:     6.81 cm/s^2 (6.81 Gal)
+   >>> 评估烈度: 3 度 (更具抗噪性)
+----------------------------------------
+[方法 3] 有效设计加速度 (Effective Acceleration):
+   有效加速度:     6.20 cm/s^2 (6.20 Gal)
+   >>> 评估烈度: 3 度 (结构设计实际感受)

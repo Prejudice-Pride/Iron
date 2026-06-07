@@ -65,7 +65,6 @@ def plot_waveforms(csv_files, labels=None, save_path=None):
     colors = [
         '#2E6F95',  # 蓝（稍亮）
         '#B03A2E',  # 红
-        '#239B56',  # 绿
         '#6C3483',  # 紫
         '#AF601A'   # 棕
     ]
@@ -126,17 +125,19 @@ if __name__ == "__main__":
     files_to_compare = [
         "output/cond1_output/cond1_tracked_surface_waveform.csv",
         # "output/cond2_output/waveform.csv" # 增加其他条件
-        "output/cond3_p1_output/cond3_tracked_surface_waveform.csv",
-        "output/cond3_p2_output/cond3_tracked_surface_waveform.csv",
-        "output/cond3_p3_output/cond3_tracked_surface_waveform.csv",
+        # "output\cond2_p1_output\cond2_tracked_surface_waveform.csv",
+        "output\cond2_p2_output\cond2_tracked_surface_waveform.csv",
+        # "output\cond2_p3_output\cond2_tracked_surface_waveform.csv",
+        "output\cond2_p4_output\cond2_tracked_surface_waveform.csv",
     ]
     
     # 给定好读的图例名
     legend_labels = [
         "Tracker Result (实验一)",
-        "Tracker Result (实验三 P1)",
-        "Tracker Result (实验三 P2)",
-        "Tracker Result (实验三 P3)",
+        # "Tracker Result (实验二 P1)",
+        "Tracker Result (实验二 P1)",
+        # "Tracker Result (实验二 P3)",
+        "Tracker Result (实验二 P2)",
     ]
     
     output_path = "output/discussion_waveform_comparison.png"

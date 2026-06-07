@@ -38,7 +38,7 @@ from utils.self_calibration import SelfCalibration
 from utils.image_enhancement import enhance_frames
 
 INPUT_DIR = "input_videos"
-DEFAULT_VIDEO = "sample3.mp4"
+DEFAULT_VIDEO = "qample.mp4"
 OUTPUT_DIR = "output"
 
 # Configuration
@@ -347,9 +347,9 @@ def main():
     cancel_weight_matrix = np.array([weight_x, weight_y])
 
     # --- C. 亚像素平滑滤波 (Low-pass Filter) ---
-    print("[滤噪] 对参考框(墙面)进行物理低通滤波，避免扣除过程中引入相机独立的高阶测量噪声叠加。")
+    print("[滤噪] 对参考框(墙面)进行物理极低通滤波，防止噪声注入目标。")
     from scipy.signal import butter, filtfilt
-    def lowpass_filter(data, cutoff=4.0, fs=25.0, order=4):
+    def lowpass_filter(data, cutoff=1.0, fs=25.0, order=4):
         nyq = 0.5 * fs
         effective_cutoff = min(cutoff, nyq * 0.9)
         if effective_cutoff <= 0: return data
@@ -358,8 +358,8 @@ def main():
         return filtfilt(b, a, data)
 
     avg_camera_shift_smooth = np.zeros_like(avg_camera_shift)
-    avg_camera_shift_smooth[:, 0] = lowpass_filter(avg_camera_shift[:, 0], cutoff=4.0, fs=fps)
-    avg_camera_shift_smooth[:, 1] = lowpass_filter(avg_camera_shift[:, 1], cutoff=4.0, fs=fps)
+    avg_camera_shift_smooth[:, 0] = lowpass_filter(avg_camera_shift[:, 0], cutoff=1.0, fs=fps)
+    avg_camera_shift_smooth[:, 1] = lowpass_filter(avg_camera_shift[:, 1], cutoff=1.0, fs=fps)
 
     # --- D. 修正核心轨迹应用 (独立分通道抵消) ---
     # 这一步非常关键：分别乘以对应的轴向权重，对于负相关轴，偏移直接置0

@@ -345,9 +345,10 @@ class Analyzer:
 
         # --- (Optional) Signal Smoothing: 应用低通滤波以抑制求导放大的高频噪声 ---
         
-        cutoff = 3.0
+        # [优化] 限制为 1.5Hz-2.0Hz 的结构主频带低通截止频率，避免高频测量噪声注入两阶求导
+        cutoff = 1.5
         
-        from scipy.signal import butter, filtfilt
+        from scipy.signal import butter, filtfilt, savgol_filter
         def lowpass_filter(data, cutoff, fs=30.0, order=4):
             nyq = 0.5 * fs
             # 关键修复：确保截止频率低于奎斯特频率，且由于低帧率限制，自适应调整截止频率
@@ -369,31 +370,44 @@ class Analyzer:
         disp_cm_smooth[:, 1] = lowpass_filter(disp_cm[:, 1], cutoff, fs=fps)
 
         # --- Step 3: 运动学推导 (Kinematics Calculation) ---
-        # 修正版：居中二阶精度的差分离散，不破坏长度，能缓解高频放大
-        vel = np.gradient(disp_cm_smooth, dt, axis=0)
-        # 再次滤波：消除一阶导数产生的噪声
-        vel[:, 0] = lowpass_filter(vel[:, 0], cutoff, fs=fps)
-        vel[:, 1] = lowpass_filter(vel[:, 1], cutoff, fs=fps)
+        # [优化] 弃用暴力差分，改用多项式平滑求导 (Savitzky-Golay Filter) 
+        # 直接在一阶/二阶差分过程中进行平滑多项式拟合，大大抑制高频噪点。
+        window_length = min(15, T // 2 * 2 + 1) # Must be odd
+        if window_length < 5:
+            window_length = 5
+            
+        vel = np.zeros_like(disp_cm_smooth)
+        acc = np.zeros_like(disp_cm_smooth)
         
-        # 加速度 a = ∆v / ∆t (cm/s^2 = Gal)
-        acc = np.gradient(vel, dt, axis=0)
-        # 再次滤波：消除二阶导数极其严重的放大噪声
+        for ax in range(2):
+            vel[:, ax] = savgol_filter(disp_cm_smooth[:, ax], window_length=window_length, polyorder=3, deriv=1, delta=dt)
+            acc[:, ax] = savgol_filter(disp_cm_smooth[:, ax], window_length=window_length, polyorder=3, deriv=2, delta=dt)
+
+        # 再次极低通滤波，确保高频撕裂现象不存在
         acc[:, 0] = lowpass_filter(acc[:, 0], cutoff, fs=fps)
         acc[:, 1] = lowpass_filter(acc[:, 1], cutoff, fs=fps)
 
         # --- Step 4: 峰值特征提取 (Peak Feature Extraction) ---
-        # 计算全序列的合成加速度和速度模长
-        acc_mags_all = np.sqrt(np.sum(acc**2, axis=1)) # cm/s^2 (Gal)
-        vel_mags_all = np.sqrt(np.sum(vel**2, axis=1)) # cm/s
+        # [优化] 消除滤波引起的边缘振铃效应 (Edge Ringing)
+        margin = min(10, T // 10)
+        
+        if T > 2 * margin:
+            acc_mags_all = np.sqrt(np.sum(acc[margin:-margin]**2, axis=1)) # cm/s^2 (Gal)
+            vel_mags_all = np.sqrt(np.sum(vel[margin:-margin]**2, axis=1)) # cm/s
+            T_eval = T - 2 * margin
+        else:
+            acc_mags_all = np.sqrt(np.sum(acc**2, axis=1))
+            vel_mags_all = np.sqrt(np.sum(vel**2, axis=1))
+            T_eval = T
 
         # 1. 传统峰值法 (Traditional PGA)
         # 采用 2.0 秒滑动窗口捕捉最大震动特征 (地震工程常用窗口)
         window_size = int(2.0 * fps)
-        if window_size > T: window_size = T
+        if window_size > T_eval: window_size = T_eval
         
         max_pga = 0.0 # cm/s^2 (Gal)
         max_pgv = 0.0 # cm/s
-        for i in range(T - window_size + 1):
+        for i in range(T_eval - window_size + 1):
             max_pga = max(max_pga, np.max(acc_mags_all[i : i + window_size]))
             max_pgv = max(max_pgv, np.max(vel_mags_all[i : i + window_size]))
         
